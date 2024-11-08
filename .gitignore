@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.env
+venv/
+trading_env/
+
+# Secrets
+config.py
+secrets.json
+
+# IDE
+.vscode/
+.idea/

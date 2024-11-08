@@ -1,0 +1,324 @@
+[
+  {
+    "entry_price": 19909.57421875,
+    "exit_price": 20976.298828125,
+    "profit": 43.398564133030376,
+    "profit_pct": 5.357847423830919,
+    "reason": "take_profit"
+  },
+  {
+    "entry_price": 20688.78125,
+    "exit_price": 22676.552734375,
+    "profit": 2.9850735215377844,
+    "profit_pct": 9.607968011044644,
+    "reason": "take_profit"
+  },
+  {
+    "entry_price": 22777.625,
+    "exit_price": 22636.46875,
+    "profit": -0.0007303330040245395,
+    "profit_pct": -0.6197145224754563,
+    "reason": "stop_loss"
+  },
+  {
+    "entry_price": 23623.474609375,
+    "exit_price": 24565.6015625,
+    "profit": 6.732811841892752e-07,
+    "profit_pct": 3.9880964536483487,
+    "reason": "take_profit"
+  },
+  {
+    "entry_price": 20187.244140625,
+    "exit_price": 22163.94921875,
+    "profit": 6.332016287359986e-08,
+    "profit_pct": 9.791852044564408,
+    "reason": "take_profit"
+  },
+  {
+    "entry_price": 24197.533203125,
+    "exit_price": 25052.7890625,
+    "profit": 8.80545494223983e-10,
+    "profit_pct": 3.534475403734749,
+    "reason": "take_profit"
+  },
+  {
+    "entry_price": 27423.9296875,
+    "exit_price": 26965.87890625,
+    "profit": -3.9272080046261546e-14,
+    "profit_pct": -1.6702594648891012,
+    "reason": "stop_loss"
+  },
+  {
+    "entry_price": 28822.6796875,
+    "exit_price": 28245.98828125,
+    "profit": -1.1553407150888008e-23,
+    "profit_pct": -2.0008250880993006,
+    "reason": "stop_loss"
+  },
+  {
+    "entry_price": 28422.701171875,
+    "exit_price": 29473.787109375,
+    "profit": 7.191234765469659e-33,
+    "profit_pct": 3.6980508331842854,
+    "reason": "take_profit"
+  },
+  {
+    "entry_price": 25760.09765625,
+    "exit_price": 27238.783203125,
+    "profit": 4.667415122842359e-42,
+    "profit_pct": 5.7402171630208665,
+    "reason": "take_profit"
+  },
+  {
+    "entry_price": 28327.48828125,
+    "exit_price": 30027.296875,
+    "profit": 2.044279672093256e-51,
+    "profit_pct": 6.000562340273241,
+    "reason": "take_profit"
+  },
+  {
+    "entry_price": 30477.251953125,
+    "exit_price": 29909.337890625,
+    "profit": -3.185321187956791e-63,
+    "profit_pct": -1.8634031157844233,
+    "reason": "stop_loss"
+  },
+  {
+    "entry_price": 31476.048828125,
+    "exit_price": 30334.068359375,
+    "profit": -5.721301581469922e-75,
+    "profit_pct": -3.6280934592069825,
+    "reason": "stop_loss"
+  },
+  {
+    "entry_price": 29151.958984375,
+    "exit_price": 28701.779296875,
+    "profit": -7.256599774086368e-86,
+    "profit_pct": -1.5442519240003394,
+    "reason": "stop_loss"
+  },
+  {
+    "entry_price": 26664.55078125,
+    "exit_price": 26049.556640625,
+    "profit": -4.5081149668345666e-95,
+    "profit_pct": -2.306411031148714,
+    "reason": "stop_loss"
+  },
+  {
+    "entry_price": 27727.392578125,
+    "exit_price": 27297.265625,
+    "profit": -1.2602523596924452e-104,
+    "profit_pct": -1.5512708305083889,
+    "reason": "stop_loss"
+  },
+  {
+    "entry_price": 27530.78515625,
+    "exit_price": 27391.01953125,
+    "profit": -1.7155045340975305e-114,
+    "profit_pct": -0.5076703196322363,
+    "reason": "stop_loss"
+  },
+  {
+    "entry_price": 28519.466796875,
+    "exit_price": 28328.341796875,
+    "profit": -7.637744267987293e-124,
+    "profit_pct": -0.6701562878480671,
+    "reason": "stop_loss"
+  },
+  {
+    "entry_price": 29682.94921875,
+    "exit_price": 33086.234375,
+    "profit": 4.406447678899062e-132,
+    "profit_pct": 11.465454901968531,
+    "reason": "take_profit"
+  },
+  {
+    "entry_price": 33901.52734375,
+    "exit_price": 35437.25390625,
+    "profit": 1.318281067127399e-144,
+    "profit_pct": 4.529962756333217,
+    "reason": "take_profit"
+  },
+  {
+    "entry_price": 36693.125,
+    "exit_price": 36502.35546875,
+    "profit": -1.2616155322133445e-164,
+    "profit_pct": -0.5199053807763754,
+    "reason": "stop_loss"
+  },
+  {
+    "entry_price": 37880.58203125,
+    "exit_price": 36154.76953125,
+    "profit": -9.172342588460428e-183,
+    "profit_pct": -4.5559292055657234,
+    "reason": "stop_loss"
+  },
+  {
+    "entry_price": 41980.09765625,
+    "exit_price": 44080.6484375,
+    "profit": 2.115869917666488e-202,
+    "profit_pct": 5.003682455553493,
+    "reason": "take_profit"
+  },
+  {
+    "entry_price": 41243.83203125,
+    "exit_price": 42890.7421875,
+    "profit": 2.082114403673459e-223,
+    "profit_pct": 3.9931065450032666,
+    "reason": "take_profit"
+  },
+  {
+    "entry_price": 44957.96875,
+    "exit_price": 42848.17578125,
+    "profit": -1.9776727623899096e-244,
+    "profit_pct": -4.692812036242189,
+    "reason": "stop_loss"
+  },
+  {
+    "entry_price": 46970.50390625,
+    "exit_price": 46139.73046875,
+    "profit": -5.972176684005602e-266,
+    "profit_pct": -1.7687130611972357,
+    "reason": "stop_loss"
+  },
+  {
+    "entry_price": 46627.77734375,
+    "exit_price": 46368.5859375,
+    "profit": -3.833820722830462e-288,
+    "profit_pct": -0.5558733892443213,
+    "reason": "stop_loss"
+  },
+  {
+    "entry_price": 47147.19921875,
+    "exit_price": 49958.22265625,
+    "profit": 3.3084140483290116e-308,
+    "profit_pct": 5.962227839786682,
+    "reason": "take_profit"
+  },
+  {
+    "entry_price": 49742.44140625,
+    "exit_price": 51826.6953125,
+    "profit": 0.0,
+    "profit_pct": 4.190091694992915,
+    "reason": "take_profit"
+  },
+  {
+    "entry_price": 51938.5546875,
+    "exit_price": 51662.99609375,
+    "profit": -0.0,
+    "profit_pct": -0.5305472888261109,
+    "reason": "stop_loss"
+  },
+  {
+    "entry_price": 57085.37109375,
+    "exit_price": 62504.7890625,
+    "profit": 0.0,
+    "profit_pct": 9.493531994124748,
+    "reason": "take_profit"
+  },
+  {
+    "entry_price": 61198.3828125,
+    "exit_price": 63167.37109375,
+    "profit": 0.0,
+    "profit_pct": 3.217386131399258,
+    "reason": "take_profit"
+  },
+  {
+    "entry_price": 68330.4140625,
+    "exit_price": 63801.19921875,
+    "profit": -0.0,
+    "profit_pct": -6.628402455760396,
+    "reason": "stop_loss"
+  },
+  {
+    "entry_price": 66106.8046875,
+    "exit_price": 68300.09375,
+    "profit": 0.0,
+    "profit_pct": 3.317796213064761,
+    "reason": "take_profit"
+  },
+  {
+    "entry_price": 63821.47265625,
+    "exit_price": 65738.7265625,
+    "profit": 0.0,
+    "profit_pct": 3.004089104268326,
+    "reason": "take_profit"
+  },
+  {
+    "entry_price": 71448.1953125,
+    "exit_price": 70136.53125,
+    "profit": -0.0,
+    "profit_pct": -1.8358253231772315,
+    "reason": "stop_loss"
+  },
+  {
+    "entry_price": 67929.5625,
+    "exit_price": 67578.09375,
+    "profit": -0.0,
+    "profit_pct": -0.5174017571510148,
+    "reason": "stop_loss"
+  },
+  {
+    "entry_price": 65140.74609375,
+    "exit_price": 64096.19921875,
+    "profit": -0.0,
+    "profit_pct": -1.6035230445421988,
+    "reason": "stop_loss"
+  },
+  {
+    "entry_price": 60277.4140625,
+    "exit_price": 61804.640625,
+    "profit": 0.0,
+    "profit_pct": 2.5336630415439876,
+    "reason": "take_profit"
+  },
+  {
+    "entry_price": 56977.703125,
+    "exit_price": 56662.375,
+    "profit": -0.0,
+    "profit_pct": -0.5534237213954074,
+    "reason": "stop_loss"
+  },
+  {
+    "entry_price": 56705.09765625,
+    "exit_price": 59231.953125,
+    "profit": 0.0,
+    "profit_pct": 4.456134586114224,
+    "reason": "take_profit"
+  },
+  {
+    "entry_price": 53991.45703125,
+    "exit_price": 56034.31640625,
+    "profit": 0.0,
+    "profit_pct": 3.783671505322772,
+    "reason": "take_profit"
+  },
+  {
+    "entry_price": 53948.75390625,
+    "exit_price": 57019.53515625,
+    "profit": 0.0,
+    "profit_pct": 5.692033694302334,
+    "reason": "take_profit"
+  },
+  {
+    "entry_price": 60837.0078125,
+    "exit_price": 62818.953125,
+    "profit": 0.0,
+    "profit_pct": 3.2577955158616057,
+    "reason": "take_profit"
+  },
+  {
+    "entry_price": 66046.125,
+    "exit_price": 68418.7890625,
+    "profit": 0.0,
+    "profit_pct": 3.5924349271058587,
+    "reason": "take_profit"
+  },
+  {
+    "entry_price": 72720.4921875,
+    "exit_price": 72339.5390625,
+    "profit": -0.0,
+    "profit_pct": -0.5238593875544262,
+    "reason": "stop_loss"
+  }
+]
