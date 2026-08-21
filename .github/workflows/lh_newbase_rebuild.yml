@@ -1,0 +1,37 @@
+name: LH Newbase Rebuild
+
+on:
+  push:
+    branches:
+      - codex/lh-5m-source-rebuild-v1
+    paths:
+      - 'lh_newbase/**'
+      - '.github/workflows/lh_newbase_rebuild.yml'
+  workflow_dispatch:
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install deps
+        run: pip install pandas numpy
+      - name: Build canonical 5m source
+        run: python lh_newbase/fetch_binance_5m.py --out work/source
+      - name: Build LH ZC events
+        run: python lh_newbase/build_lh_zc_events.py --ohlcv work/source/BTCUSDT_5m_CANONICAL.csv --out work/events
+      - name: Show result
+        run: cat work/source/SOURCE_MANIFEST.json && cat work/events/EVENT_MANIFEST.json
+      - name: Upload compact result
+        uses: actions/upload-artifact@v4
+        with:
+          name: lh-newbase-result
+          path: |
+            work/source/SOURCE_MANIFEST.json
+            work/events/EVENT_MANIFEST.json
+            work/events/LH_EVENTS.jsonl
+          retention-days: 7
