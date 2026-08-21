@@ -1,0 +1,37 @@
+name: LH Newbase Gap Repair
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - 'trading_project/lh_distribution_newbase_v1/repair_missing_5m_from_1m.py'
+      - '.github/workflows/lh-newbase-gap-repair.yml'
+  workflow_dispatch:
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pandas numpy
+      - name: Repair missing 5m from actual 1m
+        run: python trading_project/lh_distribution_newbase_v1/repair_missing_5m_from_1m.py
+      - name: Show result
+        if: always()
+        run: |
+          test -f lh_run_repaired/REPAIR_RESULT.json && cat lh_run_repaired/REPAIR_RESULT.json || true
+          test -f lh_run_repaired/UNRESOLVED_GAPS.csv && cat lh_run_repaired/UNRESOLVED_GAPS.csv || true
+      - name: Upload compact result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lh-newbase-gap-repair
+          path: |
+            lh_run_repaired/REPAIR_RESULT.json
+            lh_run_repaired/UNRESOLVED_GAPS.csv
+            lh_run_repaired/LH_EVENTS.jsonl
+          retention-days: 7
