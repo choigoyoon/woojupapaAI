@@ -1,0 +1,30 @@
+name: LH Case4135 Bybit 5m
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - 'trading_project/lh_distribution_newbase_v1/fetch_bybit_case4135_5m.py'
+      - '.github/workflows/lh_case4135_bybit.yml'
+  workflow_dispatch:
+jobs:
+  fetch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pandas
+      - name: Fetch unresolved Bybit 5m hour
+        run: python trading_project/lh_distribution_newbase_v1/fetch_bybit_case4135_5m.py
+      - name: Show result
+        if: always()
+        run: test -f lh_case4135_bybit/RESULT.json && cat lh_case4135_bybit/RESULT.json || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lh-case4135-bybit-5m
+          path: |
+            lh_case4135_bybit/RESULT.json
+            lh_case4135_bybit/CASE4135_BYBIT_5M.csv
+          retention-days: 7
