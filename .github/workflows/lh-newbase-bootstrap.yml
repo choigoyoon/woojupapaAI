@@ -1,6 +1,10 @@
 name: LH Newbase Bootstrap
 
 on:
+  push:
+    paths:
+      - 'trading_project/lh_distribution_newbase_v1/**'
+      - '.github/workflows/lh-newbase-bootstrap.yml'
   pull_request:
     paths:
       - 'trading_project/lh_distribution_newbase_v1/**'
