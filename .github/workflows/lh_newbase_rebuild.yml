@@ -7,6 +7,12 @@ on:
     paths:
       - 'lh_newbase/**'
       - '.github/workflows/lh_newbase_rebuild.yml'
+  pull_request:
+    branches:
+      - master
+    paths:
+      - 'lh_newbase/**'
+      - '.github/workflows/lh_newbase_rebuild.yml'
   workflow_dispatch:
 
 jobs:
