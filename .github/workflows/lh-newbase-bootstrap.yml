@@ -1,0 +1,32 @@
+name: LH Newbase Bootstrap
+
+on:
+  push:
+    paths:
+      - 'trading_project/lh_distribution_newbase_v1/**'
+      - '.github/workflows/lh-newbase-bootstrap.yml'
+  pull_request:
+    paths:
+      - 'trading_project/lh_distribution_newbase_v1/**'
+      - '.github/workflows/lh-newbase-bootstrap.yml'
+  workflow_dispatch:
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pandas numpy
+      - name: Download 5m and measure LH cases
+        run: python trading_project/lh_distribution_newbase_v1/bootstrap_5m.py
+      - name: Upload measurement
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lh-newbase-bootstrap
+          path: lh_run/
+          retention-days: 7
