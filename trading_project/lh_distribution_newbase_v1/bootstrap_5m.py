@@ -1,4 +1,4 @@
-# trigger: LH newbase bootstrap measurement
+# trigger: LH newbase bootstrap measurement v2
 from __future__ import annotations
 import json, hashlib, urllib.request, zipfile
 from pathlib import Path
