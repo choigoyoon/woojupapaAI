@@ -2,292 +2,33 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="한국 라그나로크 DB를 Supabase에서 실시간으로 불러오는 협업 사이트" />
-  <title>라그 협업 DB</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="description" content="라그나로크 스킬·몬스터·장비 DB 기반 조합 연구 도구" />
+  <title>RAGNAROK LAB — 스킬 장비 연구소</title>
   <style>
-    :root {
-      --bg:#f6f3ed; --panel:#fffdf9; --ink:#25211d; --muted:#746d64;
-      --line:#ded6ca; --accent:#705132; --accent2:#b58d5c; --ok:#277b55;
-      --warn:#a56a15; --danger:#b44444; --shadow:0 18px 46px rgba(44,35,26,.08);
-    }
-    *{box-sizing:border-box} html{scroll-behavior:smooth}
-    body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Noto Sans KR","Apple SD Gothic Neo",sans-serif}
-    button,input,select{font:inherit} button{cursor:pointer}
-    .wrap{width:min(1240px,calc(100% - 34px));margin:auto}
-    header{position:sticky;top:0;z-index:20;background:rgba(246,243,237,.94);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
-    .top{height:66px;display:flex;align-items:center;gap:18px}
-    .brand{font-weight:950;letter-spacing:-.03em;white-space:nowrap}.brand small{display:block;font-size:10px;color:var(--muted);letter-spacing:0}
-    nav{display:flex;gap:15px;flex:1;overflow:auto} nav a{color:var(--muted);text-decoration:none;font-size:13px;white-space:nowrap} nav a:hover{color:var(--ink)}
-    .auth{display:flex;align-items:center;gap:8px}.auth span{font-size:12px;color:var(--muted);max-width:180px;overflow:hidden;text-overflow:ellipsis}
-    .btn{border:0;border-radius:11px;padding:10px 14px;background:var(--accent);color:white;font-weight:850}.btn:hover{filter:brightness(.96)}
-    .btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}.btn.small{padding:7px 10px;font-size:12px}
-    .hero{padding:72px 0 35px}.hero .eyebrow{display:inline-flex;padding:6px 10px;border-radius:999px;background:#deefe6;color:var(--ok);font-size:12px;font-weight:900}
-    h1{font-size:clamp(42px,7vw,82px);line-height:.98;letter-spacing:-.065em;margin:15px 0 20px}
-    .lead{font-size:18px;line-height:1.7;color:var(--muted);max-width:860px;margin:0}
-    .stats{display:grid;grid-template-columns:repeat(5,1fr);gap:11px;margin-top:30px}
-    .stat,.card{background:var(--panel);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow)}
-    .stat{padding:18px}.stat b{display:block;font-size:29px;letter-spacing:-.04em}.stat span{font-size:12px;color:var(--muted)}
-    section{padding:37px 0}.head{display:flex;align-items:end;justify-content:space-between;gap:18px;margin-bottom:15px}.head h2{font-size:30px;letter-spacing:-.035em;margin:0}.head p{margin:5px 0 0;color:var(--muted);font-size:14px;line-height:1.55}
-    .search{display:grid;grid-template-columns:170px 1fr auto;gap:9px}.field{width:100%;border:1px solid var(--line);background:white;color:var(--ink);padding:12px 13px;border-radius:12px;outline:none}.field:focus{border-color:var(--accent2);box-shadow:0 0 0 3px rgba(181,141,92,.14)}
-    .grid{display:grid;gap:11px}.grid2{grid-template-columns:repeat(2,1fr)}.grid3{grid-template-columns:repeat(3,1fr)}.grid4{grid-template-columns:repeat(4,1fr)}
-    .card{padding:17px}.result{cursor:pointer;transition:.16s transform,.16s border-color}.result:hover{transform:translateY(-2px);border-color:var(--accent2)}
-    .meta{font-size:11px;color:var(--accent);font-weight:900}.result h3,.card h3{margin:7px 0;font-size:18px}.result p,.muted{color:var(--muted);font-size:13px;line-height:1.55;margin:0}.result p{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:4;overflow:hidden}
-    .empty{padding:30px;text-align:center;border:1px dashed var(--line);border-radius:16px;color:var(--muted);background:rgba(255,255,255,.35)}
-    .loading{position:relative;overflow:hidden}.loading:after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent,rgba(255,255,255,.65),transparent);animation:shine 1.25s infinite}@keyframes shine{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
-    .notice{border-left:4px solid #3d76a4}.market{border-left:4px solid var(--accent2)}
-    .badge{display:inline-flex;padding:5px 8px;border-radius:999px;background:#eee6db;color:var(--accent);font-size:11px;font-weight:900}.badge.active{background:#deefe6;color:var(--ok)}.badge.building{background:#f7e7ca;color:var(--warn)}.badge.planned{background:#eee;color:#666}
-    .rank{font-size:27px;font-weight:950;color:var(--accent)}
-    .split{display:grid;grid-template-columns:390px 1fr;gap:13px}.stack{display:grid;gap:9px}.choice{width:100%;text-align:left;border:1px solid var(--line);background:white;color:var(--ink);border-radius:11px;padding:10px 12px}.choice:hover,.choice.on{border-color:var(--accent2);background:#faf5ed}
-    .evidence{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.evidence span{font-size:11px;padding:4px 7px;border-radius:999px;background:#edf1e9;color:#496342}
-    .statusbar{padding:12px 14px;border-radius:13px;background:#fff8e9;border:1px solid #ead6aa;color:#78551c;font-size:13px;line-height:1.5}
-    dialog{border:1px solid var(--line);border-radius:18px;width:min(860px,calc(100% - 26px));padding:0;background:var(--panel);color:var(--ink);box-shadow:0 26px 90px rgba(0,0,0,.24)} dialog::backdrop{background:rgba(24,20,16,.55)}
-    .modal{padding:21px}.modal-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.modal h2{margin:5px 0 0}.modal pre{white-space:pre-wrap;word-break:break-word;background:#f1ece4;padding:14px;border-radius:12px;max-height:62vh;overflow:auto;font-size:12px;line-height:1.55}
-    .auth-form{display:grid;gap:9px;margin-top:14px}.message{min-height:20px;font-size:13px;color:var(--muted)}
-    footer{padding:48px 0 70px;color:var(--muted);font-size:12px;border-top:1px solid var(--line);margin-top:30px}
-    @media(max-width:970px){nav{display:none}.stats{grid-template-columns:repeat(2,1fr)}.grid4,.grid3{grid-template-columns:repeat(2,1fr)}.split{grid-template-columns:1fr}.search{grid-template-columns:1fr}}
-    @media(max-width:570px){.wrap{width:min(100% - 22px,1240px)}.auth span{display:none}.hero{padding-top:48px}.stats,.grid4,.grid3,.grid2{grid-template-columns:1fr}h1{font-size:48px}.head{align-items:start;flex-direction:column}}
+    :root{--bg:#070a10;--panel:#0f1521;--panel2:#131b29;--line:#253248;--line2:#33445e;--text:#eef4ff;--muted:#8d9bb1;--dim:#66748a;--violet:#8b6cff;--cyan:#4cd9ff;--orange:#ffab52;--green:#57df9b;--yellow:#ffd166;--shadow:0 20px 70px rgba(0,0,0,.34);--sidebar:238px}
+    *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:radial-gradient(circle at 88% 4%,rgba(76,217,255,.08),transparent 24%),radial-gradient(circle at 20% 0%,rgba(139,108,255,.11),transparent 28%),var(--bg);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Noto Sans KR","Apple SD Gothic Neo",sans-serif}button,input,select{font:inherit}button{cursor:pointer}a{color:inherit}.sidebar{position:fixed;inset:0 auto 0 0;width:var(--sidebar);padding:24px 18px;border-right:1px solid var(--line);background:rgba(8,12,19,.94);backdrop-filter:blur(18px);z-index:30;display:flex;flex-direction:column}.logo{display:flex;align-items:center;gap:12px;padding:4px 6px 24px}.logo-mark{width:42px;height:42px;border-radius:14px;background:linear-gradient(135deg,var(--violet),var(--cyan));display:grid;place-items:center;box-shadow:0 10px 30px rgba(139,108,255,.28)}.logo-mark svg{width:25px;height:25px}.logo b{font-size:17px;letter-spacing:.08em}.logo small{display:block;color:var(--muted);font-size:10px;margin-top:2px}.nav-label{font-size:10px;color:var(--dim);letter-spacing:.14em;text-transform:uppercase;padding:7px 11px}.nav{display:grid;gap:5px}.nav a{display:flex;align-items:center;gap:11px;padding:11px 12px;border-radius:12px;text-decoration:none;color:var(--muted);font-size:13px;font-weight:700}.nav a:hover,.nav a.on{background:linear-gradient(90deg,rgba(139,108,255,.18),rgba(76,217,255,.04));color:var(--text)}.nav svg{width:18px;height:18px}.sidebar-foot{margin-top:auto;padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--panel)}.server-line{display:flex;align-items:center;gap:8px;font-size:12px}.dot{width:8px;height:8px;border-radius:50%;background:var(--yellow);box-shadow:0 0 14px currentColor}.dot.ok{background:var(--green)}.sidebar-foot p{font-size:11px;line-height:1.55;color:var(--muted);margin:9px 0 0}.main{margin-left:var(--sidebar);min-height:100vh}.topbar{height:70px;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 28px;gap:18px;position:sticky;top:0;background:rgba(7,10,16,.84);backdrop-filter:blur(18px);z-index:20}.topbar h1{font-size:15px;margin:0}.topbar .crumb{color:var(--dim);font-size:12px}.top-spacer{flex:1}.live-pill{display:flex;align-items:center;gap:8px;padding:8px 11px;border:1px solid var(--line);border-radius:999px;color:var(--muted);font-size:11px;background:var(--panel)}.content{width:min(1480px,calc(100% - 46px));margin:auto;padding:26px 0 72px}.section-title{display:flex;align-items:end;justify-content:space-between;gap:18px;margin-bottom:14px}.section-title h2{font-size:22px;margin:0;letter-spacing:-.035em}.section-title p{margin:5px 0 0;color:var(--muted);font-size:12px}.eyebrow{display:inline-flex;align-items:center;gap:7px;color:var(--cyan);font-size:10px;font-weight:900;letter-spacing:.13em;text-transform:uppercase;margin-bottom:7px}.panel{background:linear-gradient(180deg,rgba(19,27,41,.92),rgba(13,19,30,.94));border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow)}.lab-grid{display:grid;grid-template-columns:minmax(330px,420px) minmax(0,1fr);gap:14px}.control-panel{padding:18px;position:sticky;top:88px;align-self:start}.control-panel h3{margin:0 0 13px;font-size:15px}.field-label{display:block;font-size:11px;color:var(--muted);margin:13px 0 7px;font-weight:800}.search-field{display:flex;gap:8px}.input,.select{width:100%;height:44px;border:1px solid var(--line);background:#0a101a;color:var(--text);border-radius:12px;padding:0 12px;outline:none}.input:focus,.select:focus{border-color:var(--violet);box-shadow:0 0 0 3px rgba(139,108,255,.13)}.btn{border:0;border-radius:12px;padding:0 15px;height:44px;background:linear-gradient(135deg,var(--violet),#6650df);color:white;font-weight:900;font-size:12px;white-space:nowrap}.btn:hover{filter:brightness(1.08)}.btn.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--text)}.btn.small{height:34px;padding:0 11px}.suggestions{display:grid;gap:6px;margin-top:8px;max-height:210px;overflow:auto}.suggestion{border:1px solid var(--line);background:#0b111c;color:var(--text);border-radius:10px;padding:9px 10px;text-align:left}.suggestion:hover,.suggestion.on{border-color:var(--violet);background:rgba(139,108,255,.1)}.suggestion b{display:block;font-size:12px}.suggestion small{color:var(--muted);font-size:10px}.selected-box{margin-top:11px;border:1px solid var(--line2);border-radius:14px;background:linear-gradient(135deg,rgba(139,108,255,.12),rgba(76,217,255,.05));padding:13px}.selected-box .name{font-size:16px;font-weight:950}.selected-box .sub{font-size:11px;color:var(--muted);margin-top:5px;line-height:1.5}.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}.chip{font-size:10px;padding:5px 8px;border-radius:999px;background:#182337;border:1px solid var(--line2);color:#c8d3e5}.chip.fire{color:#ffc48b;border-color:rgba(255,171,82,.4);background:rgba(255,171,82,.09)}.chip.magic{color:#baa8ff;border-color:rgba(139,108,255,.45);background:rgba(139,108,255,.1)}.goal-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:7px}.goal{border:1px solid var(--line);background:#0b111c;color:var(--muted);border-radius:11px;padding:10px;text-align:left}.goal b{display:block;color:var(--text);font-size:11px}.goal small{font-size:9px}.goal.on{border-color:var(--cyan);background:rgba(76,217,255,.08);color:var(--cyan)}.run-btn{width:100%;margin-top:14px;height:48px;font-size:13px;background:linear-gradient(135deg,var(--violet),#5f5cff 48%,#239fca)}.notice-box{margin-top:11px;padding:11px;border-radius:12px;border:1px solid rgba(255,209,102,.23);background:rgba(255,209,102,.06);color:#d4c28f;font-size:10px;line-height:1.55}.workspace{min-width:0}.empty-state{min-height:520px;display:grid;place-items:center;text-align:center;padding:30px}.empty-state h3{margin:15px 0 6px}.empty-state p{max-width:460px;color:var(--muted);font-size:12px;line-height:1.65}.loading-ring{width:42px;height:42px;border:3px solid var(--line);border-top-color:var(--cyan);border-radius:50%;animation:spin .8s linear infinite;margin:auto}@keyframes spin{to{transform:rotate(360deg)}}.research-head{padding:18px;display:grid;grid-template-columns:1.25fr .75fr;gap:12px}.profile{padding:16px;border-radius:15px;background:linear-gradient(135deg,rgba(139,108,255,.13),rgba(76,217,255,.05));border:1px solid var(--line)}.profile-top{display:flex;justify-content:space-between;gap:12px}.profile h3{font-size:22px;margin:0}.profile .code{font-size:10px;color:var(--cyan);font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.profile-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-top:13px}.metric{padding:10px;border-radius:11px;background:rgba(7,10,16,.6);border:1px solid var(--line)}.metric b{font-size:12px;display:block}.metric span{font-size:9px;color:var(--muted)}.target-card{padding:16px;border:1px solid var(--line);border-radius:15px;background:#0b111c}.target-card h4{margin:0 0 11px;font-size:13px}.target-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:7px}.target-kv{padding:9px;border-radius:10px;background:var(--panel2)}.target-kv b{font-size:11px;display:block}.target-kv span{font-size:9px;color:var(--muted)}.analysis-strip{padding:0 18px 16px;display:grid;gap:6px}.analysis-line{font-size:11px;color:#b9c7da;display:flex;gap:8px;align-items:flex-start}.analysis-line:before{content:"";width:5px;height:5px;border-radius:50%;background:var(--cyan);margin-top:6px;flex:0 0 auto}.path-tabs{display:flex;gap:7px;padding:0 18px 14px;overflow:auto}.path-tab{border:1px solid var(--line);background:#0b111c;color:var(--muted);border-radius:11px;padding:9px 12px;white-space:nowrap}.path-tab b{font-size:11px}.path-tab span{font-size:9px;display:block;margin-top:2px}.path-tab.on{background:rgba(139,108,255,.12);border-color:var(--violet);color:var(--text)}.path-view{padding:0 18px 18px}.path-summary{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}.path-summary p{margin:0;color:var(--muted);font-size:11px;line-height:1.55}.toggle{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:10px;white-space:nowrap}.toggle input{accent-color:var(--violet)}.gear-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.gear{display:grid;grid-template-columns:54px minmax(0,1fr);gap:11px;border:1px solid var(--line);background:#0a101a;border-radius:14px;padding:11px;position:relative;overflow:hidden;transition:.18s}.gear:hover{border-color:var(--line2);transform:translateY(-1px)}.gear.reference{opacity:.68}.gear-icon{width:54px;height:54px;border-radius:13px;background:linear-gradient(135deg,#19243a,#101826);border:1px solid var(--line);display:grid;place-items:center;overflow:hidden;color:#b09cff;font-weight:950}.gear-icon img{width:100%;height:100%;object-fit:contain;padding:5px}.gear-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}.gear h4{font-size:12px;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.score{font-size:10px;font-family:ui-monospace,SFMono-Regular,monospace;color:var(--cyan);font-weight:900}.gear-meta{display:flex;gap:5px;flex-wrap:wrap;margin-top:5px}.source,.confidence,.slot{font-size:8px;padding:3px 6px;border-radius:999px;border:1px solid var(--line2);color:var(--muted)}.source.kro{color:var(--green);border-color:rgba(87,223,155,.35);background:rgba(87,223,155,.06)}.source.ref{color:#d5a56f;border-color:rgba(255,171,82,.3);background:rgba(255,171,82,.05)}.confidence.high{color:var(--cyan)}.gear-desc{font-size:9px;color:var(--muted);line-height:1.5;margin-top:7px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.evidence{display:flex;gap:4px;flex-wrap:wrap;margin-top:7px}.evidence span{font-size:8px;padding:3px 5px;border-radius:6px;background:#172235;color:#aebed3}.bars{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-top:8px}.bar{height:3px;border-radius:99px;background:#202c3f;overflow:hidden}.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--violet),var(--cyan))}.limitations{padding:15px 18px;border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(2,1fr);gap:6px}.limit{font-size:9px;color:var(--dim);line-height:1.45;padding-left:11px;position:relative}.limit:before{content:"!";position:absolute;left:0;color:var(--orange);font-weight:900}.secondary{margin-top:18px}.quick-grid{display:grid;grid-template-columns:1.25fr .75fr;gap:14px}.db-panel,.feed-panel{padding:17px}.search-row{display:grid;grid-template-columns:140px 1fr auto;gap:8px}.result-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}.db-card{padding:12px;border:1px solid var(--line);border-radius:12px;background:#0a101a;cursor:pointer}.db-card:hover{border-color:var(--violet)}.db-card .type{font-size:8px;color:var(--cyan);text-transform:uppercase;font-weight:900}.db-card h4{font-size:12px;margin:5px 0}.db-card p{font-size:9px;color:var(--muted);line-height:1.45;margin:0;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.feed-list{display:grid;gap:7px}.feed{padding:11px;border:1px solid var(--line);border-radius:11px;background:#0a101a}.feed b{display:block;font-size:11px}.feed small{color:var(--muted);font-size:9px}.stats-line{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}.stat-chip{padding:7px 9px;border:1px solid var(--line);border-radius:10px;background:#0a101a}.stat-chip b{display:block;font-size:12px}.stat-chip span{font-size:8px;color:var(--muted)}dialog{border:1px solid var(--line2);border-radius:18px;background:var(--panel);color:var(--text);width:min(860px,calc(100% - 24px));padding:0;box-shadow:0 30px 100px rgba(0,0,0,.6)}dialog::backdrop{background:rgba(1,3,7,.76);backdrop-filter:blur(4px)}.modal{padding:20px}.modal-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.modal h3{margin:4px 0 0}.modal pre{white-space:pre-wrap;word-break:break-word;background:#090e17;border:1px solid var(--line);border-radius:13px;padding:14px;max-height:64vh;overflow:auto;color:#c6d2e4;font-size:10px;line-height:1.55}.mobile-menu{display:none}.hidden{display:none!important}@media(max-width:1120px){:root{--sidebar:205px}.lab-grid{grid-template-columns:340px minmax(0,1fr)}.gear-grid{grid-template-columns:1fr}.profile-stats{grid-template-columns:repeat(2,1fr)}.quick-grid{grid-template-columns:1fr}.result-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:820px){.sidebar{transform:translateX(-100%);transition:.2s}.sidebar.open{transform:none}.main{margin-left:0}.mobile-menu{display:grid;place-items:center;width:38px;height:38px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--text)}.content{width:min(100% - 24px,1480px)}.lab-grid{grid-template-columns:1fr}.control-panel{position:static}.research-head{grid-template-columns:1fr}.limitations{grid-template-columns:1fr}}@media(max-width:560px){.topbar{padding:0 13px}.topbar .crumb,.live-pill span{display:none}.goal-grid,.target-grid,.profile-stats{grid-template-columns:1fr 1fr}.gear-grid,.result-grid{grid-template-columns:1fr}.search-row,.search-field{grid-template-columns:1fr;display:grid}.section-title{align-items:start;flex-direction:column}.path-summary{align-items:start;flex-direction:column}}
   </style>
 </head>
 <body>
-<header>
-  <div class="wrap top">
-    <div class="brand">라그 협업 DB<small>DB는 Supabase · 화면은 독립 웹사이트</small></div>
-    <nav><a href="#database">게임 DB</a><a href="#combination">스킬 조합</a><a href="#live">공식 새소식</a><a href="#market">공식 거래자료</a><a href="#modules">기능 현황</a></nav>
-    <div class="auth"><span id="authState">비로그인</span><button id="authButton" class="btn ghost small">로그인</button></div>
-  </div>
-</header>
-
-<main class="wrap">
-  <section class="hero">
-    <span class="eyebrow" id="connectionBadge">DB 연결 확인 중</span>
-    <h1>DB는 서버에 두고,<br>웹에서 바로 당겨본다.</h1>
-    <p class="lead">한국 라그나로크 아이템·스킬·몬스터·맵 자료를 웹사이트가 Supabase API에서 직접 불러온다. 페이지를 다시 배포하지 않아도 DB가 바뀌면 새로고침만으로 최신 자료가 보인다.</p>
-    <div class="stats">
-      <div class="stat"><b id="totalCount">—</b><span>통합 데이터</span></div>
-      <div class="stat"><b id="itemCount">—</b><span>아이템</span></div>
-      <div class="stat"><b id="monsterCount">—</b><span>몬스터</span></div>
-      <div class="stat"><b id="skillCount">—</b><span>스킬</span></div>
-      <div class="stat"><b id="marketCount">—</b><span>공식 거래자료</span></div>
-    </div>
-  </section>
-
-  <section id="database">
-    <div class="head"><div><h2>게임 DB 검색</h2><p>검색할 때마다 서버 DB를 조회한다. 결과 카드를 누르면 원본 필드와 출처가 열린다.</p></div></div>
-    <form id="searchForm" class="search">
-      <select id="searchType" class="field">
-        <option value="">전체 종류</option><option value="item">아이템</option><option value="skill">스킬</option><option value="monster">몬스터</option><option value="map">맵</option><option value="effect">상태효과</option><option value="random_option">랜덤옵션</option><option value="client_table">퀘스트</option>
-      </select>
-      <input id="searchQuery" class="field" placeholder="예: 힐, 포링, 글레이시아, 프론테라, 501" />
-      <button class="btn">DB 검색</button>
-    </form>
-    <div id="searchStatus" class="statusbar" style="margin-top:10px">검색어를 입력하면 Supabase DB에서 바로 가져온다.</div>
-    <div id="searchResults" class="grid grid3" style="margin-top:12px"></div>
-  </section>
-
-  <section id="combination">
-    <div class="head"><div><h2>스킬 → 장비 조합</h2><p>스킬 설명·내부명과 실제 장비 설명을 연결해 후보와 근거를 보여준다.</p></div></div>
-    <div class="split">
-      <div class="card stack">
-        <h3>1. 스킬 찾기</h3>
-        <form id="skillForm" class="stack"><input id="skillQuery" class="field" placeholder="예: 힐, 배쉬" /><button class="btn">스킬 검색</button></form>
-        <div id="skillChoices" class="stack"></div>
-        <div id="selectedSkill" class="statusbar">선택된 스킬 없음</div>
-        <h3>2. 추가 조건</h3>
-        <form id="recommendForm" class="stack"><input id="recommendQuery" class="field" placeholder="예: 쿨타임, 힐량, 화속성" /><button class="btn">장비 후보 가져오기</button></form>
-      </div>
-      <div>
-        <div id="recommendResults" class="grid grid2"></div>
-        <div id="recommendEmpty" class="empty">왼쪽에서 스킬을 선택해.</div>
-      </div>
-    </div>
-  </section>
-
-  <section id="live">
-    <div class="head"><div><h2>공식 새소식</h2><p>GNJOY 공지·업데이트·이벤트 수집 테이블에서 최신 자료를 불러온다.</p></div><button id="reloadLive" class="btn ghost small">새로고침</button></div>
-    <div id="liveResults" class="grid grid3"></div>
-  </section>
-
-  <section id="market">
-    <div class="head"><div><h2>공식 인기 거래자료</h2><p>GNJOY가 공개한 최근 120일 인기 거래 순위. 보호된 전체 노점 검색은 우회하지 않는다.</p></div></div>
-    <div id="marketResults" class="grid grid4"></div>
-  </section>
-
-  <section id="modules">
-    <div class="head"><div><h2>기능 현황</h2><p>서버의 실제 상태표를 불러와 표시한다.</p></div></div>
-    <div id="moduleResults" class="grid grid4"></div>
-  </section>
-</main>
-
-<footer><div class="wrap">Frontend: GitHub Pages · Database/Auth/API: Supabase · 각 자료는 출처와 관측시각을 보존한다.</div></footer>
-
-<dialog id="detailDialog"><div class="modal"><div class="modal-head"><div><span id="detailMeta" class="badge"></span><h2 id="detailTitle">상세</h2></div><button id="detailClose" class="btn ghost small">닫기</button></div><pre id="detailBody"></pre></div></dialog>
-<dialog id="authDialog"><div class="modal"><div class="modal-head"><h2>로그인 / 가입</h2><button id="authClose" class="btn ghost small">닫기</button></div><div class="auth-form"><input id="email" type="email" class="field" placeholder="이메일" /><input id="password" type="password" minlength="6" class="field" placeholder="비밀번호 6자 이상" /><div style="display:flex;gap:8px"><button id="signIn" class="btn">로그인</button><button id="signUp" class="btn ghost">가입</button></div><div id="authMessage" class="message"></div></div></div></dialog>
-
+<div class="app">
+  <aside class="sidebar" id="sidebar"><div class="logo"><div class="logo-mark"><svg viewBox="0 0 24 24" fill="none"><path d="M5 17.5 9.2 6l3.1 5.4L15 4l4 13.5" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 18h16" stroke="white" stroke-width="2" stroke-linecap="round"/></svg></div><div><b>RAGNAROK LAB</b><small>SKILL · GEAR · TARGET</small></div></div><div class="nav-label">Workspace</div><nav class="nav"><a class="on" href="#research"><svg viewBox="0 0 24 24" fill="none"><path d="M9 3h6M10 3v5l-5 9a3 3 0 0 0 2.6 4.5h8.8A3 3 0 0 0 19 17l-5-9V3" stroke="currentColor" stroke-width="1.7"/><path d="M7.5 15h9" stroke="currentColor" stroke-width="1.7"/></svg>스킬 연구소</a><a href="#database"><svg viewBox="0 0 24 24" fill="none"><ellipse cx="12" cy="5" rx="8" ry="3" stroke="currentColor" stroke-width="1.7"/><path d="M4 5v7c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12v7c0 1.7 3.6 3 8 3s8-1.3 8-3v-7" stroke="currentColor" stroke-width="1.7"/></svg>게임 DB</a><a href="#feeds"><svg viewBox="0 0 24 24" fill="none"><path d="M4 18V9m5 9V5m6 13v-7m5 7V3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>시장·업데이트</a></nav><div class="nav-label" style="margin-top:19px">Research rule</div><div class="sidebar-foot"><div class="server-line"><span class="dot" id="sideDot"></span><b id="sideStatus">DB 확인 중</b></div><p>근거 점수는 실제 데미지가 아니다. kRO 확인 자료와 참고 자료를 분리하고, 직업 충돌은 제외한다.</p></div></aside>
+  <main class="main"><header class="topbar"><button class="mobile-menu" id="menuButton">☰</button><div><h1>스킬 장비 조합 연구소</h1><div class="crumb">Ragnarok Lab / Research</div></div><div class="top-spacer"></div><div class="live-pill"><span class="dot" id="topDot"></span><span id="connectionText">Supabase 연결 확인 중</span></div></header><div class="content">
+    <section id="research"><div class="section-title"><div><div class="eyebrow">AI-assisted evidence mapping</div><h2>스킬과 사냥 대상을 넣으면, DB 근거로 장비 조합 방향을 찾는다</h2><p>직접 증폭 · 순간 화력 · 회전율 · 대상 특화를 따로 계산해 섞이지 않게 보여준다.</p></div></div><div class="lab-grid">
+      <aside class="panel control-panel"><h3>연구 입력</h3><label class="field-label">1. 스킬 찾기</label><div class="search-field"><input id="skillQuery" class="input" placeholder="예: 메테오 스톰, 애시드 데몬스트레이션"/><button class="btn small" id="skillSearch">검색</button></div><div class="suggestions" id="skillSuggestions"></div><div class="selected-box" id="selectedSkillBox"><div class="name">메테오 스톰</div><div class="sub">ID 83 · WZ_METEOR · 마법사 계열</div><div class="chips"><span class="chip fire">Fire</span><span class="chip magic">Magic</span></div></div><label class="field-label">2. 대상 몬스터 (선택)</label><div class="search-field"><input id="monsterQuery" class="input" placeholder="예: 포링, Poring, 1002"/><button class="btn small ghost" id="monsterSearch">검색</button></div><div class="suggestions" id="monsterSuggestions"></div><div class="selected-box" id="selectedMonsterBox"><div class="name">Poring</div><div class="sub">ID 1002 · Plant · Medium · Water</div></div><label class="field-label">3. 최적화 관점</label><div class="goal-grid" id="goalGrid"><button class="goal on" data-goal="balanced"><b>균형</b><small>전체 근거 합산</small></button><button class="goal" data-goal="burst"><b>순간 화력</b><small>증폭·속성·방무</small></button><button class="goal" data-goal="rotation"><b>회전율</b><small>쿨·캐스팅·딜레이</small></button><button class="goal" data-goal="target"><b>대상 특화</b><small>종족·크기·속성</small></button></div><button class="btn run-btn" id="runResearch">DB 전수 연결 분석</button><div class="notice-box">정확한 최종 데미지는 캐릭터 스탯·검증 공식이 채워진 뒤 계산한다. 지금은 “왜 이 장비가 후보인지”를 근거로 찾는다.</div></aside>
+      <div class="workspace panel" id="workspace"><div class="empty-state"><div><div class="loading-ring"></div><h3>메테오 스톰 조합을 분석 중</h3><p>스킬 내부 코드, 속성, 캐스팅, 직업 제한과 대상 몬스터 특성을 장비 DB에 대조한다.</p></div></div></div>
+    </div></section>
+    <section class="secondary" id="database"><div class="section-title"><div><div class="eyebrow">Raw database</div><h2>게임 DB 직접 검색</h2><p>추천 결과가 이상하면 원본 아이템·스킬·몬스터 필드를 바로 확인한다.</p></div></div><div class="quick-grid"><div class="panel db-panel"><div class="stats-line" id="statsLine"></div><div class="search-row"><select id="dbType" class="select"><option value="">전체</option><option value="item">아이템</option><option value="skill">스킬</option><option value="monster">몬스터</option><option value="map">맵</option></select><input id="dbQuery" class="input" placeholder="이름 또는 ID"/><button class="btn" id="dbSearch">검색</button></div><div class="result-grid" id="dbResults"></div></div><div class="panel feed-panel" id="feeds"><h3 style="margin-top:0;font-size:14px">공식 새소식</h3><div class="feed-list" id="liveList"></div><h3 style="font-size:14px;margin-top:18px">인기 거래자료</h3><div class="feed-list" id="marketList"></div></div></div></section>
+  </div></main>
+</div>
+<dialog id="detailDialog"><div class="modal"><div class="modal-head"><div><div class="eyebrow" id="detailMeta">DETAIL</div><h3 id="detailTitle">상세</h3></div><button class="btn ghost small" id="detailClose">닫기</button></div><pre id="detailBody"></pre></div></dialog>
 <script type="module">
-  import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-
-  const API_BASE = 'https://lejxxzrjorfexgtvegjf.supabase.co/functions/v1/ragnarok-hub';
-  const SUPABASE_URL = 'https://lejxxzrjorfexgtvegjf.supabase.co';
-  const PUBLISHABLE_KEY = 'sb_publishable_q6Uk5UliWHL_yhAlLcNphQ_o_H5BLi4';
-  const supabase = createClient(SUPABASE_URL, PUBLISHABLE_KEY, { auth: { persistSession: true } });
-  const $ = (s) => document.querySelector(s);
-  const fmt = (v) => new Intl.NumberFormat('ko-KR').format(Number(v || 0));
-  const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  let session = null;
-  let selectedSkill = null;
-
-  async function api(name, params = {}) {
-    const url = new URL(API_BASE);
-    url.searchParams.set('api', name);
-    Object.entries(params).forEach(([k,v]) => { if (v !== '' && v !== null && v !== undefined) url.searchParams.set(k, String(v)); });
-    const headers = {};
-    if (session?.access_token) headers.authorization = `Bearer ${session.access_token}`;
-    const res = await fetch(url, { headers, cache: 'no-store' });
-    const data = await res.json().catch(() => ({ error: '서버 응답을 읽지 못했어.' }));
-    if (!res.ok) throw new Error(data.error || data.detail || `요청 실패 (${res.status})`);
-    return data;
-  }
-
-  function sourceLabel(source) {
-    return String(source || 'unknown').replaceAll('_',' · ');
-  }
-
-  async function loadStatus() {
-    try {
-      const s = await api('status');
-      $('#connectionBadge').textContent = 'Supabase DB 연결 정상';
-      $('#totalCount').textContent = fmt(s.entity_count);
-      $('#itemCount').textContent = fmt(s.entity_types?.item);
-      $('#monsterCount').textContent = fmt(s.entity_types?.monster);
-      $('#skillCount').textContent = fmt(s.entity_types?.skill);
-      $('#marketCount').textContent = fmt(s.official_market_count);
-      const box = $('#moduleResults'); box.textContent = '';
-      (s.modules || []).forEach(m => {
-        const el = document.createElement('article'); el.className = 'card';
-        el.innerHTML = `<span class="badge ${esc(m.status)}">${esc(m.status === 'active' ? '가동' : m.status === 'building' ? '구축 중' : '예정')}</span><h3>${esc(m.order)}. ${esc(m.name)}</h3><p class="muted">${esc(m.scope || '')}</p>`;
-        box.append(el);
-      });
-    } catch (e) {
-      $('#connectionBadge').textContent = 'DB 연결 실패';
-      $('#connectionBadge').style.background = '#f2dede';
-      $('#connectionBadge').style.color = 'var(--danger)';
-      $('#searchStatus').textContent = e.message;
-    }
-  }
-
-  async function runSearch(q = $('#searchQuery').value.trim(), type = $('#searchType').value) {
-    const box = $('#searchResults'); box.textContent = '';
-    $('#searchStatus').textContent = '서버 DB 조회 중…';
-    try {
-      const rows = await api('search', { q, type, limit: 60 });
-      $('#searchStatus').textContent = `${fmt(rows.length)}건을 Supabase DB에서 가져왔어.`;
-      if (!rows.length) { box.innerHTML = '<div class="empty">일치하는 자료가 없어.</div>'; return; }
-      rows.forEach(r => {
-        const el = document.createElement('article'); el.className = 'card result';
-        el.innerHTML = `<div class="meta">${esc(r.entity_type)} · ${esc(r.entity_id)} · ${esc(sourceLabel(r.source_name))}</div><h3>${esc(r.name || r.entity_id)}</h3><p>${esc(r.description || JSON.stringify(r.summary || {}))}</p>`;
-        el.onclick = () => showDetail(r.entity_type, r.entity_id);
-        box.append(el);
-      });
-    } catch (e) {
-      $('#searchStatus').textContent = e.message;
-      box.innerHTML = '<div class="empty">DB 조회에 실패했어.</div>';
-    }
-  }
-  $('#searchForm').addEventListener('submit', e => { e.preventDefault(); runSearch(); });
-
-  async function showDetail(type, id) {
-    const d = await api('entity', { type, id });
-    $('#detailMeta').textContent = `${type} · ${id} · ${sourceLabel(d.source_name)}`;
-    $('#detailTitle').textContent = d.payload?.name || d.payload?.Name || d.payload?.displayName || d.payload?.key || id;
-    $('#detailBody').textContent = JSON.stringify(d, null, 2);
-    $('#detailDialog').showModal();
-  }
-  $('#detailClose').onclick = () => $('#detailDialog').close();
-
-  $('#skillForm').addEventListener('submit', async e => {
-    e.preventDefault();
-    const rows = await api('search', { q: $('#skillQuery').value.trim(), type: 'skill', limit: 20 });
-    const box = $('#skillChoices'); box.textContent = '';
-    rows.forEach(r => {
-      const b = document.createElement('button'); b.type = 'button'; b.className = 'choice';
-      b.textContent = `${r.name || r.entity_id} · ID ${r.entity_id}`;
-      b.onclick = () => {
-        selectedSkill = r;
-        document.querySelectorAll('.choice').forEach(x => x.classList.remove('on')); b.classList.add('on');
-        $('#selectedSkill').textContent = `선택: ${r.name || r.entity_id} (${r.entity_id})`;
-      };
-      box.append(b);
-    });
-    if (!rows.length) box.innerHTML = '<div class="empty">스킬을 찾지 못했어.</div>';
-  });
-
-  $('#recommendForm').addEventListener('submit', async e => {
-    e.preventDefault();
-    if (!selectedSkill) { $('#recommendEmpty').textContent = '먼저 스킬을 선택해.'; return; }
-    const rows = await api('recommend', { skill_id: selectedSkill.entity_id, q: $('#recommendQuery').value.trim(), limit: 30 });
-    const box = $('#recommendResults'); box.textContent = '';
-    $('#recommendEmpty').style.display = rows.length ? 'none' : 'block';
-    if (!rows.length) { $('#recommendEmpty').textContent = '직접 연결되는 장비 후보가 없어.'; return; }
-    rows.forEach(r => {
-      const tags = [];
-      if (r.evidence?.matched_skill_name) tags.push('스킬명');
-      if (r.evidence?.matched_database_name) tags.push('내부명');
-      if (r.evidence?.matched_query) tags.push('추가조건');
-      const el = document.createElement('article'); el.className = 'card result';
-      el.innerHTML = `<div class="meta">item · ${esc(r.item_id)} · 점수 ${fmt(r.score)}</div><h3>${esc(r.name)}</h3><p>${esc((r.description || '').slice(0,500))}</p><div class="evidence">${tags.map(t => `<span>${esc(t)} 일치</span>`).join('')}</div>`;
-      el.onclick = () => showDetail('item', r.item_id);
-      box.append(el);
-    });
-  });
-
-  async function loadLive() {
-    const box = $('#liveResults'); box.innerHTML = '<div class="empty loading">공식 자료 불러오는 중</div>';
-    try {
-      const rows = await api('live', { limit: 30 }); box.textContent = '';
-      rows.forEach(r => {
-        const el = document.createElement('article'); el.className = 'card notice result';
-        el.innerHTML = `<span class="badge">${esc(r.entry_type)}</span><h3>${esc(r.title || '제목 없음')}</h3><p>${esc(r.published_at ? new Date(r.published_at).toLocaleDateString('ko-KR') : '날짜 미상')}</p>`;
-        if (r.source_url) el.onclick = () => window.open(r.source_url, '_blank', 'noopener');
-        box.append(el);
-      });
-      if (!rows.length) box.innerHTML = '<div class="empty">수집된 새소식이 없어.</div>';
-    } catch(e) { box.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
-  }
-  $('#reloadLive').onclick = loadLive;
-
-  async function loadMarket() {
-    const box = $('#marketResults'); box.innerHTML = '<div class="empty loading">거래자료 불러오는 중</div>';
-    try {
-      const rows = await api('official-market', { limit: 40 }); box.textContent = '';
-      rows.forEach(r => {
-        const el = document.createElement('article'); el.className = 'card market';
-        el.innerHTML = `<span class="badge">${esc(r.raw?.equipment || '기타')} · ${esc(r.raw?.rank || '-')}위</span><h3>${esc(r.item_name)}</h3><div class="rank">${fmt(r.quantity)}</div><p class="muted">최근 120일 거래량 · ${esc(r.raw?.ranking_date || '')}</p>`;
-        box.append(el);
-      });
-      if (!rows.length) box.innerHTML = '<div class="empty">공식 거래자료가 없어.</div>';
-    } catch(e) { box.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
-  }
-
-  async function syncAuth() {
-    const { data } = await supabase.auth.getSession(); session = data.session;
-    $('#authState').textContent = session ? (session.user.email || '로그인됨') : '비로그인';
-    $('#authButton').textContent = session ? '로그아웃' : '로그인';
-  }
-  supabase.auth.onAuthStateChange((_event, next) => { session = next; syncAuth(); });
-  $('#authButton').onclick = async () => { if (session) await supabase.auth.signOut(); else $('#authDialog').showModal(); };
-  $('#authClose').onclick = () => $('#authDialog').close();
-  $('#signIn').onclick = async () => {
-    const { error } = await supabase.auth.signInWithPassword({ email: $('#email').value, password: $('#password').value });
-    $('#authMessage').textContent = error ? error.message : '로그인 완료'; if (!error) setTimeout(() => $('#authDialog').close(), 350);
-  };
-  $('#signUp').onclick = async () => {
-    const { error } = await supabase.auth.signUp({ email: $('#email').value, password: $('#password').value });
-    $('#authMessage').textContent = error ? error.message : '가입 요청 완료. 이메일 확인 설정에 따라 메일을 확인해.';
-  };
-
-  await Promise.all([loadStatus(), loadLive(), loadMarket(), syncAuth()]);
-  $('#searchQuery').value = '힐'; $('#searchType').value = 'skill'; await runSearch('힐','skill');
+const HUB='https://lejxxzrjorfexgtvegjf.supabase.co/functions/v1/ragnarok-hub',RESEARCH='https://lejxxzrjorfexgtvegjf.supabase.co/functions/v1/ragnarok-build-research-v2';const $=s=>document.querySelector(s),fmt=n=>new Intl.NumberFormat('ko-KR').format(Number(n||0)),esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));let selectedSkill={entity_id:'83',name:'메테오 스톰',summary:{databaseName:'WZ_METEOR'}},selectedMonster={entity_id:'1002',name:'Poring',summary:{race:'Plant',size:'Medium',element:'Water'}},goal='balanced',researchData=null,activePath='direct',showReference=false;
+async function hub(api,params={}){const u=new URL(HUB);u.searchParams.set('api',api);Object.entries(params).forEach(([k,v])=>{if(v!==''&&v!=null)u.searchParams.set(k,String(v))});const r=await fetch(u,{cache:'no-store'}),d=await r.json().catch(()=>({error:'응답 해석 실패'}));if(!r.ok)throw new Error(d.error||d.detail||`요청 실패 ${r.status}`);return d}async function research(){const u=new URL(RESEARCH);u.searchParams.set('skill_id',selectedSkill.entity_id);if(selectedMonster?.entity_id)u.searchParams.set('monster_id',selectedMonster.entity_id);u.searchParams.set('goal',goal);u.searchParams.set('limit','80');const r=await fetch(u,{cache:'no-store'}),d=await r.json().catch(()=>({error:'응답 해석 실패'}));if(!r.ok)throw new Error(d.error||d.detail||`연구 실패 ${r.status}`);return d}function timeLabel(v){if(Array.isArray(v)){const a=v.map(x=>Number(x.Time||x.time)).filter(Number.isFinite);return a.length?`${Math.min(...a)/1000}~${Math.max(...a)/1000}s`:'—'}const n=Number(v);return Number.isFinite(n)?`${n/1000}s`:'—'}function sourceLabel(t){return t==='kro_cross_checked'?'kRO 교차':t==='krom_observed'?'kROM 확인':t==='kro_client'?'kRO 클라':'참고 전용'}function sourceClass(t){return t==='reference_only'?'ref':'kro'}function slotLabel(s){return({weapon:'무기',shield:'방패',head_top:'상단',head_mid:'중단',head_low:'하단',armor:'갑옷',armor_other:'방어구',garment:'걸칠것',shoes:'신발',accessory:'액세서리',card:'카드',shadow:'쉐도우',ammo:'탄약'}[s]||s||'기타')}function bar(v,max=170){return `<div class="bar"><i style="width:${Math.min(100,Math.round(Number(v||0)/max*100))}%"></i></div>`}function setConnection(ok,text){$('#sideDot').classList.toggle('ok',ok);$('#topDot').classList.toggle('ok',ok);$('#sideStatus').textContent=ok?'DB ONLINE':'DB ERROR';$('#connectionText').textContent=text}
+async function loadStatus(){try{const s=await hub('status');setConnection(true,`DB ${fmt(s.entity_count)}건 연결`);const t=s.entity_types||{};$('#statsLine').innerHTML=[['통합',s.entity_count],['아이템',t.item],['스킬',t.skill],['몬스터',t.monster],['공식거래',s.official_market_count]].map(x=>`<div class="stat-chip"><b>${fmt(x[1])}</b><span>${x[0]}</span></div>`).join('')}catch(e){setConnection(false,e.message)}}function showLoading(){workspace.innerHTML='<div class="empty-state"><div><div class="loading-ring"></div><h3>DB 관계를 따라가는 중</h3><p>직업 충돌 제거 → 직접 스킬 효과 판별 → 속성·대상·회전율 점수화 순서로 검사한다.</p></div></div>'}async function runResearch(){showLoading();try{researchData=await research();activePath=researchData.paths?.find(p=>p.items?.some(i=>i.source_tier!=='reference_only'))?.key||researchData.paths?.[0]?.key||'direct';renderResearch()}catch(e){workspace.innerHTML=`<div class="empty-state"><div><h3>연구 실패</h3><p>${esc(e.message)}</p></div></div>`}}
+function renderResearch(){const d=researchData,s=d.context?.skill||{},t=d.context?.target||null;workspace.innerHTML=`<div class="research-head"><div class="profile"><div class="profile-top"><div><div class="code">${esc(s.database_name||'NO_CODE')}</div><h3>${esc(s.name||s.id)}</h3></div><span class="chip ${String(s.element).toLowerCase()==='fire'?'fire':''}">${esc(s.element||'속성 미상')}</span></div><div class="profile-stats"><div class="metric"><b>${esc(s.damage_class||'—')}</b><span>공격 계열</span></div><div class="metric"><b>${timeLabel(s.cast_time)}</b><span>변동 캐스팅</span></div><div class="metric"><b>${timeLabel(s.fixed_cast_time)}</b><span>고정 캐스팅</span></div><div class="metric"><b>${timeLabel(s.cooldown)}</b><span>재사용</span></div></div></div><div class="target-card"><h4>${t?'선택 대상':'대상 미선택'}</h4>${t?`<div style="font-size:17px;font-weight:950;margin-bottom:10px">${esc(t.name||t.id)}</div><div class="target-grid"><div class="target-kv"><b>${esc(t.race||'—')}</b><span>종족</span></div><div class="target-kv"><b>${esc(t.size||'—')}</b><span>크기</span></div><div class="target-kv"><b>${esc(t.element||'—')}</b><span>속성</span></div><div class="target-kv"><b>${esc(t.mdef||'—')}</b><span>MDEF</span></div></div>`:'<p>몬스터를 고르면 대상 특화 조합이 추가된다.</p>'}</div></div><div class="analysis-strip">${(d.analysis||[]).map(x=>`<div class="analysis-line">${esc(x)}</div>`).join('')}</div><div class="path-tabs" id="pathTabs"></div><div class="path-view" id="pathView"></div><div class="limitations">${(d.limitations||[]).map(x=>`<div class="limit">${esc(x)}</div>`).join('')}</div>`;renderTabs();renderPath()}function renderTabs(){const b=$('#pathTabs');b.innerHTML=(researchData.paths||[]).map(p=>`<button class="path-tab ${p.key===activePath?'on':''}" data-path="${esc(p.key)}"><b>${esc(p.name)}</b><span>근거 ${fmt(p.heuristic_score)}</span></button>`).join('');b.querySelectorAll('[data-path]').forEach(x=>x.onclick=()=>{activePath=x.dataset.path;renderTabs();renderPath()})}function renderPath(){const p=(researchData.paths||[]).find(x=>x.key===activePath)||researchData.paths?.[0];if(!p)return;let rows=p.items||[];if(!showReference)rows=rows.filter(x=>x.source_tier!=='reference_only');const b=$('#pathView');b.innerHTML=`<div class="path-summary"><p><b style="color:var(--text)">${esc(p.name)}</b> — ${esc(p.description)}</p><label class="toggle"><input id="refToggle" type="checkbox" ${showReference?'checked':''}/> rAthena 참고 후보도 보기</label></div><div class="gear-grid">${rows.length?rows.map(gearCard).join(''):`<div class="empty-state" style="min-height:250px;grid-column:1/-1"><div><h3>kRO 확인 후보가 부족해</h3><p>참고 후보 보기를 켜면 rAthena 자료까지 분리해서 볼 수 있다.</p></div></div>`}</div>`;$('#refToggle').onchange=e=>{showReference=e.target.checked;renderPath()};b.querySelectorAll('[data-item]').forEach(x=>x.onclick=()=>showEntity('item',x.dataset.item))}function gearCard(r){const e=(r.evidence||[]).slice(0,4),c=r.component_scores||{};return `<article class="gear ${r.source_tier==='reference_only'?'reference':''}" data-item="${esc(r.item_id)}"><div class="gear-icon">${r.icon_url?`<img src="${esc(r.icon_url)}" alt="" loading="lazy"/>`:esc((r.name||'?').slice(0,1))}</div><div><div class="gear-top"><h4 title="${esc(r.name)}">${esc(r.name)}</h4><span class="score">${fmt(r.final_score||r.score)}</span></div><div class="gear-meta"><span class="source ${sourceClass(r.source_tier)}">${sourceLabel(r.source_tier)}</span><span class="confidence ${esc(r.confidence)}">${esc(r.confidence)}</span><span class="slot">${slotLabel(r.slot_key)}</span>${r.required_level?`<span class="slot">Lv.${fmt(r.required_level)}</span>`:''}</div><div class="gear-desc">${esc(r.description||'설명 원문이 부족해 스크립트 근거로만 분류됨')}</div><div class="evidence">${e.map(x=>`<span>${esc(x)}</span>`).join('')}</div><div class="bars">${bar(c.direct)}${bar((c.type||0)+(c.element||0),120)}${bar((c.rotation||0)+(c.target||0)+(c.defense||0),180)}</div></div></article>`}
+async function searchEntities(q,type,box,select){box.innerHTML='<div class="loading-ring" style="margin:12px auto"></div>';try{const rows=await hub('search',{q,type,limit:18});box.innerHTML=rows.map(r=>`<button class="suggestion" data-id="${esc(r.entity_id)}"><b>${esc(r.name||r.entity_id)}</b><small>ID ${esc(r.entity_id)} · ${esc(r.source_name||'')}</small></button>`).join('')||'<div class="notice-box">검색 결과 없음</div>';box.querySelectorAll('[data-id]').forEach((b,i)=>b.onclick=()=>select(rows[i],b))}catch(e){box.innerHTML=`<div class="notice-box">${esc(e.message)}</div>`}}$('#skillSearch').onclick=()=>searchEntities($('#skillQuery').value.trim(),'skill',$('#skillSuggestions'),(r,b)=>{selectedSkill=r;$('#skillSuggestions').querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on');$('#selectedSkillBox').innerHTML=`<div class="name">${esc(r.name||r.entity_id)}</div><div class="sub">ID ${esc(r.entity_id)} · ${esc(r.summary?.databaseName||'내부명 미상')}</div>`});$('#monsterSearch').onclick=()=>searchEntities($('#monsterQuery').value.trim(),'monster',$('#monsterSuggestions'),(r,b)=>{selectedMonster=r;$('#monsterSuggestions').querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on');$('#selectedMonsterBox').innerHTML=`<div class="name">${esc(r.name||r.entity_id)}</div><div class="sub">ID ${esc(r.entity_id)} · ${esc(r.summary?.race||'종족 미상')} · ${esc(r.summary?.size||'크기 미상')} · ${esc(r.summary?.element||'속성 미상')}</div>`});$('#goalGrid').querySelectorAll('[data-goal]').forEach(b=>b.onclick=()=>{$('#goalGrid').querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on');goal=b.dataset.goal});$('#runResearch').onclick=runResearch;
+async function showEntity(type,id){try{const d=await hub('entity',{type,id});$('#detailMeta').textContent=`${type} · ${id} · ${d.source_name||''}`;$('#detailTitle').textContent=d.payload?.name||d.payload?.Name||d.payload?.displayName||id;$('#detailBody').textContent=JSON.stringify(d,null,2);$('#detailDialog').showModal()}catch(e){alert(e.message)}}$('#detailClose').onclick=()=>$('#detailDialog').close();async function runDbSearch(){const b=$('#dbResults');b.innerHTML='<div class="loading-ring"></div>';try{const rows=await hub('search',{q:$('#dbQuery').value.trim(),type:$('#dbType').value,limit:30});b.innerHTML=rows.map(r=>`<article class="db-card" data-type="${esc(r.entity_type)}" data-id="${esc(r.entity_id)}"><div class="type">${esc(r.entity_type)} · ${esc(r.entity_id)}</div><h4>${esc(r.name||r.entity_id)}</h4><p>${esc(r.description||JSON.stringify(r.summary||{}))}</p></article>`).join('')||'<div class="notice-box">검색 결과 없음</div>';b.querySelectorAll('[data-id]').forEach(x=>x.onclick=()=>showEntity(x.dataset.type,x.dataset.id))}catch(e){b.innerHTML=`<div class="notice-box">${esc(e.message)}</div>`}}$('#dbSearch').onclick=runDbSearch;async function loadFeeds(){try{const [l,m]=await Promise.all([hub('live',{limit:5}),hub('official-market',{limit:5})]);$('#liveList').innerHTML=l.map(r=>`<div class="feed"><b>${esc(r.title||'제목 없음')}</b><small>${r.published_at?new Date(r.published_at).toLocaleDateString('ko-KR'):'날짜 미상'}</small></div>`).join('');$('#marketList').innerHTML=m.map(r=>`<div class="feed"><b>${esc(r.item_name)}</b><small>${esc(r.raw?.rank||'-')}위 · 거래량 ${fmt(r.quantity)}</small></div>`).join('')}catch(e){$('#liveList').innerHTML=`<div class="notice-box">${esc(e.message)}</div>`}}$('#menuButton').onclick=()=>$('#sidebar').classList.toggle('open');await Promise.all([loadStatus(),loadFeeds()]);await runResearch();
 </script>
 </body>
 </html>
