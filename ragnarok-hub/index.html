@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+  <title>라그 협업 DB 불러오는 중</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, -apple-system, "Noto Sans KR", sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f5f2ec; color: #28231e; }
+    main { width: min(92vw, 620px); padding: 34px; border: 1px solid #ddd5c9; border-radius: 20px; background: #fffdf9; box-shadow: 0 18px 60px rgba(40,35,30,.08); }
+    h1 { margin: 0 0 12px; font-size: clamp(28px, 6vw, 46px); letter-spacing: -.04em; }
+    p { margin: 0; line-height: 1.7; color: #766f65; }
+    .bar { height: 8px; margin-top: 24px; overflow: hidden; border-radius: 999px; background: #ece4d8; }
+    .bar::after { content: ""; display: block; width: 38%; height: 100%; border-radius: inherit; background: #6f5133; animation: move 1.1s ease-in-out infinite alternate; }
+    .error { margin-top: 18px; white-space: pre-wrap; color: #aa3f3f; }
+    @keyframes move { from { transform: translateX(-5%); } to { transform: translateX(175%); } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>라그 협업 DB</h1>
+    <p id="status">실제 사이트 화면과 데이터를 불러오고 있어.</p>
+    <div class="bar" aria-hidden="true"></div>
+    <div id="error" class="error"></div>
+  </main>
+  <script>
+    (async () => {
+      const HUB_URL = "https://lejxxzrjorfexgtvegjf.supabase.co/functions/v1/ragnarok-hub";
+      try {
+        const response = await fetch(HUB_URL, { cache: "no-store" });
+        if (!response.ok) throw new Error(`사이트 원본 응답 오류: ${response.status}`);
+        let html = await response.text();
+        html = html.replace(
+          /const\s+FUNCTION_URL\s*=\s*location\.origin\s*\+\s*location\.pathname\s*;/,
+          `const FUNCTION_URL='${HUB_URL}';`
+        );
+        if (!html.includes("라그 협업 DB")) throw new Error("사이트 원본의 UTF-8 한글을 확인하지 못했어.");
+        document.open("text/html", "replace");
+        document.write(html);
+        document.close();
+      } catch (error) {
+        document.getElementById("status").textContent = "사이트를 불러오지 못했어.";
+        document.getElementById("error").textContent = error instanceof Error ? error.message : String(error);
+      }
+    })();
+  </script>
+</body>
+</html>
