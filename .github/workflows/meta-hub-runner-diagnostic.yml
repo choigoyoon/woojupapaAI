@@ -1,0 +1,41 @@
+name: Meta Hub Runner Diagnostic
+
+on:
+  push:
+    branches:
+      - ai-revenue-factory-g0-v1
+    paths:
+      - '.github/workflows/meta-hub-runner-diagnostic.yml'
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    runs-on: self-hosted
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Inspect runner and pilot site without changing it
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p diagnostic-receipt
+          {
+            echo "checked_at_utc=$(date -u +%FT%TZ)"
+            echo "host=$(hostname)"
+            echo "user=$(id -un)"
+            echo "uid=$(id -u)"
+            echo "site_root_exists=$(test -d /home/hakiosae/web/100sesidae.com/public_html && echo true || echo false)"
+            echo "wp_config_exists=$(test -f /home/hakiosae/web/100sesidae.com/public_html/wp-config.php && echo true || echo false)"
+            echo "wp_content_readable=$(test -r /home/hakiosae/web/100sesidae.com/public_html/wp-content && echo true || echo false)"
+            echo "wp_content_writable=$(test -w /home/hakiosae/web/100sesidae.com/public_html/wp-content && echo true || echo false)"
+            echo "php=$(command -v php || true)"
+            echo "mariadb_dump=$(command -v mariadb-dump || true)"
+          } | tee diagnostic-receipt/runner.txt
+      - name: Upload diagnostic receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: meta-hub-runner-diagnostic
+          path: diagnostic-receipt/
+          retention-days: 7
