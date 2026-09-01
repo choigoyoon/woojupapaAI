@@ -1,0 +1,38 @@
+name: LH 5m Bitstamp Repair
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - 'trading_project/lh_distribution_newbase_v1/repair_5m_with_bitstamp.py'
+      - '.github/workflows/lh-5m-bitstamp-repair.yml'
+  workflow_dispatch:
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pandas
+      - name: Build continuous 5m source using same external lineage
+        run: python trading_project/lh_distribution_newbase_v1/repair_5m_with_bitstamp.py
+      - name: Show result
+        if: always()
+        run: |
+          test -f lh_5m_bitstamp_repair/REPAIR_RESULT.json && cat lh_5m_bitstamp_repair/REPAIR_RESULT.json || true
+          test -f lh_5m_bitstamp_repair/UNRESOLVED.csv && cat lh_5m_bitstamp_repair/UNRESOLVED.csv || true
+      - name: Upload repaired source
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lh-5m-bitstamp-repair
+          path: |
+            lh_5m_bitstamp_repair/REPAIR_RESULT.json
+            lh_5m_bitstamp_repair/BITSTAMP_REPAIRED_HOURS.csv
+            lh_5m_bitstamp_repair/BTCUSDT_5m_FILLED_SAME_LINEAGE.csv
+            lh_5m_bitstamp_repair/UNRESOLVED.csv
+          retention-days: 7
