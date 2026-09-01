@@ -1,0 +1,54 @@
+name: Meta Hub Service Diagnostic
+
+on:
+  push:
+    branches:
+      - ai-revenue-factory-g0-v1
+    paths:
+      - '.github/workflows/meta-hub-service-diagnostic.yml'
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check public service ports without credentials
+        shell: bash
+        run: |
+          set -u
+          mkdir -p diagnostic-receipt
+          HOST=juju.guide365.kr
+          SITE=100sesidae.com
+          {
+            echo "checked_at_utc=$(date -u +%FT%TZ)"
+            echo "host=${HOST}"
+            for port in 22 2222 2022 2200 80 443 8083 8443 2083 10000; do
+              if timeout 6 bash -c "</dev/tcp/${HOST}/${port}" 2>/dev/null; then
+                echo "port_${port}=OPEN"
+              else
+                echo "port_${port}=CLOSED_OR_FILTERED"
+              fi
+            done
+            for url in "http://${HOST}" "https://${HOST}" "https://${HOST}:8083" "https://${HOST}:8443" "https://${SITE}"; do
+              code=$(curl -kLsS --max-time 12 -o /dev/null -w '%{http_code}' "$url" 2>/dev/null || true)
+              final=$(curl -kLsS --max-time 12 -o /dev/null -w '%{url_effective}' "$url" 2>/dev/null || true)
+              echo "url=${url} status=${code:-000} final=${final:-none}"
+            done
+          } | tee diagnostic-receipt/summary.txt
+      - name: Capture harmless response headers
+        shell: bash
+        run: |
+          for url in 'https://juju.guide365.kr' 'https://juju.guide365.kr:8083' 'https://100sesidae.com'; do
+            printf '\n### %s\n' "$url" >> diagnostic-receipt/headers.txt
+            curl -kLsSI --max-time 12 "$url" >> diagnostic-receipt/headers.txt 2>&1 || true
+          done
+      - name: Upload receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: meta-hub-service-diagnostic
+          path: diagnostic-receipt/
+          retention-days: 7
