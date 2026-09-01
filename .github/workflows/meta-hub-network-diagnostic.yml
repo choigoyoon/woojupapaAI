@@ -1,0 +1,72 @@
+name: Meta Hub Network Diagnostic
+
+on:
+  push:
+    branches:
+      - ai-revenue-factory-g0-v1
+    paths:
+      - '.github/workflows/meta-hub-network-diagnostic.yml'
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check DNS, SSH port and host fingerprints without credentials
+        shell: bash
+        env:
+          TARGET_HOST: juju.guide365.kr
+          EXPECTED_ED25519: SHA256:gsIBzfLbEpgPzeU1r+HCocMjJ3ACC7JWFRSTFbwJUL4
+          EXPECTED_RSA: SHA256:1hAyv//Z8s4fTnYe71c0A9zGB6T6cAV3mDxAOOkIyKs
+          EXPECTED_ECDSA: SHA256:NfNeL8tdLvqqt9ijBFJPRQ9LxU992cO5mDjFiGwTSMw
+        run: |
+          set -uo pipefail
+          mkdir -p diagnostic-receipt
+          STATUS=PASS
+          {
+            echo "checked_at_utc=$(date -u +%FT%TZ)"
+            echo "runner_environment=github-hosted"
+            echo "target_host=${TARGET_HOST}"
+            if getent ahosts "${TARGET_HOST}" > diagnostic-receipt/dns.txt 2>&1; then
+              echo "dns=PASS"
+            else
+              echo "dns=FAIL"
+              STATUS=FAIL
+            fi
+            if timeout 10 bash -c "</dev/tcp/${TARGET_HOST}/22" 2>/dev/null; then
+              echo "tcp_22=PASS"
+            else
+              echo "tcp_22=FAIL"
+              STATUS=FAIL
+            fi
+            : > diagnostic-receipt/hostkeys.txt
+            if timeout 15 ssh-keyscan -T 8 -p 22 "${TARGET_HOST}" > diagnostic-receipt/hostkeys.txt 2>diagnostic-receipt/ssh-keyscan.stderr; then
+              echo "hostkey_scan=PASS"
+            else
+              echo "hostkey_scan=FAIL"
+              STATUS=FAIL
+            fi
+            : > diagnostic-receipt/fingerprints.txt
+            while read -r host keytype keydata; do
+              [ -n "${keydata:-}" ] || continue
+              printf '%s %s %s\n' "$host" "$keytype" "$keydata" | ssh-keygen -lf - -E sha256 | tee -a diagnostic-receipt/fingerprints.txt
+            done < diagnostic-receipt/hostkeys.txt
+            MATCHED=0
+            grep -Fq "$EXPECTED_ED25519" diagnostic-receipt/fingerprints.txt && MATCHED=$((MATCHED+1)) || true
+            grep -Fq "$EXPECTED_RSA" diagnostic-receipt/fingerprints.txt && MATCHED=$((MATCHED+1)) || true
+            grep -Fq "$EXPECTED_ECDSA" diagnostic-receipt/fingerprints.txt && MATCHED=$((MATCHED+1)) || true
+            echo "hostkey_expected_matches=${MATCHED}/3"
+            if [ "$MATCHED" -lt 1 ]; then STATUS=FAIL; fi
+            echo "status=${STATUS}"
+          } | tee diagnostic-receipt/summary.txt
+          [ "$STATUS" = PASS ]
+      - name: Upload diagnostic receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: meta-hub-network-diagnostic
+          path: diagnostic-receipt/
+          retention-days: 7
