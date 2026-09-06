@@ -23,13 +23,12 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Download and verify OHLCV
+      - name: Install data dependency
+        run: pip install pandas
+
+      - name: Build and verify canonical OHLCV
         run: |
-          python twin_ohlcv/fetch_binance_5m.py \
-            --symbol BTCUSDT \
-            --interval 5m \
-            --start 2020-01-01 \
-            --output twin_ohlcv/data
+          python twin_ohlcv/build_canonical_5m.py
 
       - name: Commit generated data
         run: |
