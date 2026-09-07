@@ -610,12 +610,12 @@ class RuleRouter:
                 f"unknown operand calculation: {operand['calculation']}"
             )
         lookback = int(operand["lookback_closed_5m_bars"])
-        previous = np.zeros(len(current), dtype=float)
+        previous = np.full(len(current), np.nan, dtype=float)
         if lookback > 0:
             same_event = np.zeros(len(current), dtype=bool)
             same_event[lookback:] = event_codes[lookback:] == event_codes[:-lookback]
             previous[lookback:] = current[:-lookback]
-            previous[~same_event] = current[~same_event]
+            previous[~same_event] = np.nan
         return current - previous
 
     def _batch_winners(
@@ -1413,10 +1413,12 @@ def build_reconstructed_intermediate_ledger(
             ledger[f"stage10_{key.lower()}_reason"] = state["reason"]
             ledger[f"stage10_{key.lower()}_ready"] = state["ready"]
 
+    method_ready_arrays: dict[str, np.ndarray] = {}
     for method in METHODS:
         base = states[f"{method}__BASE"]
         context = states[f"{method}__CONTEXT"]
         method_ready = base["ready"] | context["ready"]
+        method_ready_arrays[method] = method_ready
         ledger[f"stage10_{method.lower()}_ready"] = method_ready
         ledger[f"stage10_{method.lower()}_wait_reason"] = np.where(
             method_ready,
@@ -1430,6 +1432,9 @@ def build_reconstructed_intermediate_ledger(
     official_release = (
         states["OFFICIAL__BASE"]["ready"]
         | states["OFFICIAL__CONTEXT"]["ready"]
+    )
+    parallel_any_ready = np.logical_or.reduce(
+        [method_ready_arrays[method] for method in METHODS]
     )
     ledger["stage10_released"] = official_release
     ledger["stage10_active_blocker_count"] = (~official_release).astype(np.int8)
@@ -1497,6 +1502,70 @@ def build_reconstructed_intermediate_ledger(
         "historical_2775_evidence_consulted": False,
         "original_missing_intermediate_hash_claimed": False,
     }
+    source_audit = router.program.get("historical_learning_evidence", {}).get(
+        "source_thought_audit", {}
+    )
+    if source_audit:
+        source_stage09 = source_audit.get("09", {})
+        source_stage10 = source_audit.get("10", {})
+        source_stage11 = source_audit.get("11", {})
+        source_method_reasons = source_stage10.get("reason_counts_by_method", {})
+        reconstructed_method_ready = {
+            method: int(method_ready_arrays[method].sum()) for method in METHODS
+        }
+        source_method_ready = {
+            method: int(
+                source_method_reasons.get(method, {}).get("METHOD_READY", 0)
+            )
+            for method in METHODS
+        }
+        summary["source_aggregate_parity"] = {
+            "status": "MATCH"
+            if (
+                int(official_release.sum())
+                == int(source_stage09.get("official_rule_ready_row_count", -1))
+                and int(parallel_any_ready.sum())
+                == int(source_stage09.get("parallel_any_ready_row_count", -1))
+                and summary["rule_now"]
+                == int(source_stage11.get("rule_now_count", -1))
+                and summary["observed_1h_zc_state_now"]
+                == int(source_stage11.get("fallback_now_count", -1))
+            )
+            else "MISMATCH",
+            "source": {
+                "official_ready_rows": int(
+                    source_stage09.get("official_rule_ready_row_count", 0)
+                ),
+                "parallel_any_ready_rows": int(
+                    source_stage09.get("parallel_any_ready_row_count", 0)
+                ),
+                "method_ready_rows": source_method_ready,
+                "rule_now": int(source_stage11.get("rule_now_count", 0)),
+                "fallback_now": int(source_stage11.get("fallback_now_count", 0)),
+            },
+            "reconstructed": {
+                "official_ready_rows": int(official_release.sum()),
+                "parallel_any_ready_rows": int(parallel_any_ready.sum()),
+                "method_ready_rows": reconstructed_method_ready,
+                "rule_now": summary["rule_now"],
+                "fallback_now": summary["observed_1h_zc_state_now"],
+            },
+            "difference_reconstructed_minus_source": {
+                "official_ready_rows": int(official_release.sum())
+                - int(source_stage09.get("official_rule_ready_row_count", 0)),
+                "parallel_any_ready_rows": int(parallel_any_ready.sum())
+                - int(source_stage09.get("parallel_any_ready_row_count", 0)),
+                "method_ready_rows": {
+                    method: reconstructed_method_ready[method]
+                    - source_method_ready[method]
+                    for method in METHODS
+                },
+                "rule_now": summary["rule_now"]
+                - int(source_stage11.get("rule_now_count", 0)),
+                "fallback_now": summary["observed_1h_zc_state_now"]
+                - int(source_stage11.get("fallback_now_count", 0)),
+            },
+        }
     return ledger, events, summary
 
 

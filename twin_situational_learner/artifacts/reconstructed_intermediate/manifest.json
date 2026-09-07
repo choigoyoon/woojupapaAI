@@ -8,7 +8,7 @@
   },
   "source_program": {
     "file": "twin_executable_thought_program_v3.json",
-    "sha256": "4fe93e0f18abec59036b1ec8072a7ceedf0a57f21222b7fc954f11f57da40fa2"
+    "sha256": "7682410b9a1f7078295622d4bcf1c455381f0bd8e775986ecd7a9d69fadd07ba"
   },
   "runtime_uses_historical_2775_evidence": false,
   "stage_order": [
@@ -22,7 +22,7 @@
     "10",
     "11"
   ],
-  "numeric_storage": "float32_after_float64_formula_validation",
+  "numeric_storage": "float32_after_float64_formula_calculation",
   "summary": {
     "status": "RECONSTRUCTED_FROM_AVAILABLE_FORMULAS",
     "rows": 656136,
@@ -38,26 +38,71 @@
       "10",
       "11"
     ],
-    "rule_now": 3801,
-    "observed_1h_zc_state_now": 335,
+    "rule_now": 3430,
+    "observed_1h_zc_state_now": 706,
     "too_fast_relative_to_study_pivot": 2,
     "historical_2775_evidence_consulted": false,
-    "original_missing_intermediate_hash_claimed": false
+    "original_missing_intermediate_hash_claimed": false,
+    "source_aggregate_parity": {
+      "status": "MISMATCH",
+      "source": {
+        "official_ready_rows": 71157,
+        "parallel_any_ready_rows": 543628,
+        "method_ready_rows": {
+          "WAVE_REARM_AGE": 88909,
+          "MOMENTUM_SPEED": 82442,
+          "CANDLE_REVERSAL": 189816,
+          "VOLUME_RANGE": 233738,
+          "MACRO_TREND": 334857,
+          "MID_MACD_TREND": 49363
+        },
+        "rule_now": 4000,
+        "fallback_now": 136
+      },
+      "reconstructed": {
+        "official_ready_rows": 50702,
+        "parallel_any_ready_rows": 540176,
+        "method_ready_rows": {
+          "WAVE_REARM_AGE": 85879,
+          "MOMENTUM_SPEED": 81442,
+          "CANDLE_REVERSAL": 189381,
+          "VOLUME_RANGE": 232760,
+          "MACRO_TREND": 329098,
+          "MID_MACD_TREND": 47594
+        },
+        "rule_now": 3430,
+        "fallback_now": 706
+      },
+      "difference_reconstructed_minus_source": {
+        "official_ready_rows": -20455,
+        "parallel_any_ready_rows": -3452,
+        "method_ready_rows": {
+          "WAVE_REARM_AGE": -3030,
+          "MOMENTUM_SPEED": -1000,
+          "CANDLE_REVERSAL": -435,
+          "VOLUME_RANGE": -978,
+          "MACRO_TREND": -5759,
+          "MID_MACD_TREND": -1769
+        },
+        "rule_now": -570,
+        "fallback_now": 570
+      }
+    }
   },
   "files": [
     {
       "file": "professor_16_modules_intermediate_ledger_reconstructed_v1.parquet",
       "rows": 656136,
       "columns": 174,
-      "bytes": 98081012,
-      "sha256": "2fd27529e874cebe31808dc1dfee0dba7f51a0413348af2c3cccd87dd20b5252"
+      "bytes": 98134077,
+      "sha256": "788b2b6876b15d64fd43105b59818f31bb6b6e79266a0f40304ba3a74be61332"
     },
     {
       "file": "stage11_event_actions_reconstructed_v1.parquet",
       "rows": 4136,
       "columns": 9,
-      "bytes": 58785,
-      "sha256": "8ecee187c087f0beacf1afa658c26d4e17104090c7fc71800a8ab343d2c89770"
+      "bytes": 57042,
+      "sha256": "174065efebf951b64a62db927b4c18183dbd353eeef6fe7c8ced5a71d8dff451"
     }
   ],
   "original_missing_parquet_hash_claimed": false

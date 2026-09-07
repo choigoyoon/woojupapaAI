@@ -385,6 +385,8 @@ def _base_feature_method(feature: str) -> str:
     """Use the supplied six-method module's observation ownership."""
 
     if feature.startswith("macd_"):
+        if feature.startswith("macd_5m_"):
+            return "MOMENTUM_SPEED"
         return (
             "MACRO_TREND"
             if any(f"macd_{timeframe}_" in feature for timeframe in ("4h", "1d", "1w"))
@@ -398,7 +400,7 @@ def _base_feature_method(feature: str) -> str:
         "close_position_for_side",
     }:
         return "CANDLE_REVERSAL"
-    if feature.startswith("speed_") or feature.startswith("candidate_rejection_"):
+    if feature.startswith("speed_"):
         return "MOMENTUM_SPEED"
     return "WAVE_REARM_AGE"
 
@@ -718,6 +720,73 @@ def _evidence_breakdown(
     return result
 
 
+def _release_baton_evidence(
+    batons: list[Mapping[str, Any]],
+    by_source_address: Mapping[str, Mapping[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Preserve Stage 10 opinions carried into Stage 11 as study-only evidence."""
+
+    evidence: list[dict[str, Any]] = []
+    dialogue_patterns: set[tuple[tuple[str, str], ...]] = set()
+    for index, baton in enumerate(batons, 1):
+        source_address = (
+            f"{baton['background']}|{baton['feature']}|{int(baton['bin'])}"
+        )
+        calculation = by_source_address.get(source_address)
+        if calculation is None:
+            raise ExportContractError(
+                f"release baton has no existing calculation: {source_address}"
+            )
+        method_states: dict[str, dict[str, Any]] = {}
+        raw_states = baton.get("method_wait_states", {})
+        for method in METHODS:
+            raw_state = str(raw_states[method])
+            if raw_state == "METHOD_READY":
+                method_states[method] = {
+                    "ready": True,
+                    "base_reason": None,
+                    "context_reason": None,
+                }
+                continue
+            parts = raw_state.split("|", 1)
+            if len(parts) != 2 or not parts[0].startswith("BASE:") or not parts[1].startswith("CONTEXT:"):
+                raise ExportContractError(
+                    f"unknown Stage 10 baton state: {raw_state}"
+                )
+            method_states[method] = {
+                "ready": False,
+                "base_reason": parts[0].removeprefix("BASE:"),
+                "context_reason": parts[1].removeprefix("CONTEXT:"),
+            }
+        dialogue_patterns.add(
+            tuple(
+                (method, str(raw_states[method]))
+                for method in METHODS
+            )
+        )
+        evidence.append(
+            {
+                "baton_id": f"BATON-{index:04d}",
+                "winner_output_address": source_address,
+                "winner_runtime_calculation_id": calculation["calculation_id"],
+                "winner_method": calculation["method"],
+                "winner_source_recorded": baton["rule_source"],
+                "background": baton["background"],
+                "side_code": int(baton["side_code"]),
+                "stage10_method_states": method_states,
+                "role": "PAST_STAGE10_TO_STAGE11_HANDOFF_EVIDENCE_ONLY",
+            }
+        )
+    return evidence, {
+        "count": len(evidence),
+        "unique_winner_output_count": len(
+            {item["winner_output_address"] for item in evidence}
+        ),
+        "unique_dialogue_pattern_count": len(dialogue_patterns),
+        "used_by_runtime_router": False,
+    }
+
+
 def _referenced_intermediate_ledgers(
     stages: Mapping[str, Mapping[str, Any]],
 ) -> list[dict[str, Any]]:
@@ -791,6 +860,14 @@ def build_executable_artifact(
             "historical evidence split changed: "
             f"context={evidence_context_count}, base={evidence_base_count}"
         )
+    release_batons, release_baton_summary = _release_baton_evidence(
+        list(stages["11"].get("learned_release_batons", [])),
+        by_source_address,
+    )
+    if len(release_batons) != 3_972:
+        raise ExportContractError(
+            "source does not contain 3,972 Stage 10-to-11 release batons"
+        )
 
     selector = deepcopy(source["selector"])
     module_program = _module_execution_program(stages, blueprint)
@@ -835,6 +912,7 @@ def build_executable_artifact(
             "historical_2775_breakdown": _evidence_breakdown(
                 evidence, by_source_address
             ),
+            "historical_stage10_to_stage11_batons": release_baton_summary,
             "reverse_stage_program": reverse_program,
             "case_level_handoff_limit": {
                 "status": "SOURCE_INTERMEDIATE_LEDGER_REQUIRED_FOR_EXACT_PER_CASE_TRACE",
@@ -868,9 +946,12 @@ def build_executable_artifact(
             "count": len(evidence),
             "context_outputs": evidence_context_count,
             "base_outputs": evidence_base_count,
+            "release_baton_count": len(release_batons),
             "role": "VALIDATION_ONLY_NOT_A_RUNTIME_WHITELIST",
             "used_by_runtime_router": False,
+            "source_thought_audit": deepcopy(source.get("thought_audit", {})),
             "results": evidence,
+            "stage10_to_stage11_release_batons": release_batons,
         },
     }
 
