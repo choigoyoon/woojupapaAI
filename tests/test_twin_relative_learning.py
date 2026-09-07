@@ -11,6 +11,7 @@ from twin_core.learning import CANONICAL_MODULES
 from twin_core.learning.distribution_learner import run_learning_pipeline
 from twin_core.learning.rule_induction import fit_independent_evidence
 from twin_core.learning.multitf_zc_distribution import compute_all_8tf_zc_distributions
+from twin_core.learning.mdd_problem import analyze_mdd_and_failures
 from twin_core.learning.threshold_frontier import THINKING_STAGES, compute_threshold_frontier
 
 
@@ -91,7 +92,7 @@ class RelativeLearningContractTest(unittest.TestCase):
         self.assertAlmostEqual(
             float(second.iloc[0]["threshold"]) - float(first.iloc[0]["threshold"]), 100.0
         )
-        self.assertEqual(first.iloc[0]["boundary_source"], "observed_fixed_action_frontier")
+        self.assertEqual(first.iloc[0]["boundary_source"], "first_counterexample_frontier")
 
     def test_offline_answer_cannot_be_requested_as_a_rule_feature(self):
         observations = pd.DataFrame(
@@ -166,6 +167,13 @@ class RelativeLearningContractTest(unittest.TestCase):
         second = compute_all_8tf_zc_distributions(changed)
         columns = [column for column in first if column.startswith("macd_")]
         pd.testing.assert_frame_equal(first.loc[:119, columns], second.loc[:119, columns])
+
+    def test_drawdown_is_bounded_when_an_uncontrolled_short_is_insolvent(self):
+        replay = pd.DataFrame({"action": ["NOW"], "realized_return": [-2.0]})
+        result = analyze_mdd_and_failures(replay, fee_bps=0)
+        self.assertEqual(result["total_return_after_fees"], -1.0)
+        self.assertEqual(result["max_drawdown"], -1.0)
+        self.assertTrue(result["insolvent_without_risk_controls"])
 
 
 if __name__ == "__main__":
