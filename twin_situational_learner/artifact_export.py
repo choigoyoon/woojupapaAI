@@ -70,8 +70,8 @@ STAGE_HANDOFF_FIELDS = {
     "06": ("candle_direction_for_side", "candle_body_ratio", "upper_wick_ratio", "lower_wick_ratio", "close_position_for_side", "volume_ratio20", "volume_ratio72", "range_ratio20"),
     "07": ("eight_timeframe_macd_witnesses",),
     "08": ("last_zc_raw_positions", "distinct_last_zc_position_count", "signal_order_sequence"),
-    "09": ("six_method_base_candidates", "six_method_context_candidates"),
-    "10": ("per_method_run", "per_method_wait_reason", "active_blocker_count", "ready_candidates"),
+    "09": ("official_base_candidate", "official_context_candidate", "six_method_base_candidates", "six_method_context_candidates"),
+    "10": ("official_base_run", "official_context_run", "per_method_run", "per_method_wait_reason", "active_blocker_count", "ready_candidates"),
     "11": ("candidate_transition", "trade_action", "action_source", "entry_fill"),
 }
 STAGE_EXECUTION_CONTRACTS = {
@@ -143,27 +143,29 @@ STAGE_EXECUTION_CONTRACTS = {
     },
     "09": {
         "observation_start": "stage03_to_stage08_handoffs",
-        "fixed_observations": ["canonical_64_features", "three_background_rulebooks", "six_method_ownership"],
+        "fixed_observations": ["canonical_64_features", "three_background_rulebooks", "six_method_ownership", "official_single_winner_path"],
         "relative_calculations": [
-            {"output": "base_candidate", "operator": "STRONGEST_SATISFIED_INTERVAL_PER_METHOD", "formula": "current relative value in learned interval"},
-            {"output": "context_candidate", "operator": "STRONGEST_ALL_CONDITIONS_PER_METHOD", "formula": "all current/prior relative comparisons are true"},
+            {"output": "official_base_candidate", "operator": "SINGLE_STRONGEST_SATISFIED_BASE", "formula": "rank every satisfied base interval in the current background"},
+            {"output": "official_context_candidate", "operator": "SINGLE_STRONGEST_SATISFIED_CONTEXT", "formula": "rank every context relation whose current/prior comparisons are all true"},
+            {"output": "six_method_views", "operator": "PRESERVE_PARALLEL_METHOD_EXPLANATIONS", "formula": "calculate strongest BASE and CONTEXT inside each method without aggregating them into the action path"},
         ],
-        "filters": ["NO_CROSS_METHOD_AGGREGATION", "NO_SINGLE_TOTAL_SCORE", "NO_TRADE_ACTION"],
+        "filters": ["OFFICIAL_SINGLE_WINNER_PATH_FOR_RELEASE", "PARALLEL_METHODS_EXPLANATION_ONLY", "NO_CROSS_METHOD_AGGREGATION", "NO_SINGLE_TOTAL_SCORE", "NO_TRADE_ACTION"],
     },
     "10": {
         "observation_start": "stage09_method_candidates",
         "fixed_observations": ["action_gate", "probability_tolerance", "minimum_support", "learned_required_persistence"],
         "relative_calculations": [
             {"output": "run_length", "operator": "CONSECUTIVE_SAME_RELATION", "formula": "reset when relation signature changes"},
-            {"output": "source_ready", "operator": "ALL_BLOCKERS_CLEARED", "formula": "support >= minimum and probability + tolerance >= gate and run >= required"},
+            {"output": "official_source_ready", "operator": "ALL_BLOCKERS_CLEARED", "formula": "support >= minimum and probability + tolerance >= gate and run >= required"},
+            {"output": "release", "operator": "OFFICIAL_BASE_OR_CONTEXT_READY", "formula": "official_base_ready or official_context_ready"},
         ],
-        "filters": ["BASE_OR_CONTEXT_WITHIN_EACH_METHOD", "WAIT_WHILE_ANY_REQUIRED_BLOCKER_REMAINS"],
+        "filters": ["ONE_ORIGINAL_ELIGIBILITY_GATE", "PARALLEL_METHODS_DO_NOT_RELEASE", "WAIT_WHILE_THE_OFFICIAL_GATE_IS_BLOCKED"],
     },
     "11": {
         "observation_start": "stage10_ready_candidates",
         "fixed_observations": ["candidate_transition_axis", "trade_action_axis", "observed_1h_zc_switch", "event_release_state"],
         "relative_calculations": [
-            {"output": "trade_action", "operator": "ORDERED_FINAL_GATE", "formula": "first ready current relation -> NOW; else observed 1h ZC switch -> NOW; else WAIT"}
+            {"output": "trade_action", "operator": "ORDERED_FINAL_GATE", "formula": "first ready official current relation -> NOW; else observed 1h ZC switch -> NOW; else WAIT"}
         ],
         "filters": ["ONE_RELEASE_PER_EVENT", "REARM_AND_NOW_ARE_INDEPENDENT", "NEXT_CLOSED_5M_OPEN"],
     },

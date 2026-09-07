@@ -496,6 +496,16 @@ class RuleRouter:
                 "base": min(base, key=_output_rank) if base else None,
                 "context": min(context, key=_output_rank) if context else None,
             }
+        base_matches = [
+            calculation
+            for calculation in matches
+            if calculation["output_source"] == "BASE"
+        ]
+        context_matches = [
+            calculation
+            for calculation in matches
+            if calculation["output_source"] == "CONTEXT"
+        ]
         return {
             "stage": "09",
             "observation_start": "stage03_to_stage08_handoffs",
@@ -503,6 +513,14 @@ class RuleRouter:
                 self.calculations_by_background[background]
             ),
             "satisfied_relation_count": len(matches),
+            "official_single_winner_candidates": {
+                "base": min(base_matches, key=_output_rank)
+                if base_matches
+                else None,
+                "context": min(context_matches, key=_output_rank)
+                if context_matches
+                else None,
+            },
             "methods": method_views,
             "historical_2775_evidence_consulted": False,
             "ready_method_count": 0,
@@ -574,8 +592,22 @@ class RuleRouter:
                 "reason": reason,
             }
 
+        official_candidates = stage09["official_single_winner_candidates"]
+        official_states = {
+            source: state_for(
+                official_candidates[source],
+                run_key=f"OFFICIAL::{source.upper()}",
+            )
+            for source in ("base", "context")
+        }
+        ready = [
+            official_candidates[source]
+            for source in ("base", "context")
+            if official_candidates[source] is not None
+            and official_states[source]["ready"]
+        ]
+
         method_states: dict[str, dict[str, Any]] = {}
-        ready: list[Mapping[str, Any]] = []
         for method in METHODS:
             view = stage09["methods"][method]
             base = state_for(
@@ -584,10 +616,6 @@ class RuleRouter:
             context = state_for(
                 view["context"], run_key=f"{method}::CONTEXT"
             )
-            if base["ready"] and view["base"] is not None:
-                ready.append(view["base"])
-            if context["ready"] and view["context"] is not None:
-                ready.append(view["context"])
             method_ready = bool(base["ready"] or context["ready"])
             method_states[method] = {
                 "base": base,
@@ -600,6 +628,7 @@ class RuleRouter:
         return {
             "stage": "10",
             "observation_start": "stage09_method_candidates",
+            "official_single_winner_states": official_states,
             "methods": method_states,
             "ready_method_count": sum(
                 int(state["ready"]) for state in method_states.values()
