@@ -1,7 +1,9 @@
-"""Export the existing Stage 03-11 calculations and 2,775 outputs as one JSON.
+"""Export the existing Stage 03-11 relation model and its evidence as one JSON.
 
 This is a serializer/compiler, not a learner.  It does not change a module,
-fit a threshold, average evidence, or add an entry method.
+fit a threshold, average evidence, or add an entry method.  The 2,775
+historical release signatures are exported as audit evidence only; they never
+select which calculations are executable at runtime.
 """
 
 from __future__ import annotations
@@ -17,7 +19,7 @@ import tempfile
 from typing import Any, Mapping
 
 
-SCHEMA = "twin.executable-thought-program.v1"
+SCHEMA = "twin.executable-thought-program.v2"
 STAGE_ORDER = ("03", "04", "05", "06", "07", "08", "09", "10", "11")
 STAGE_MODULES = {
     "03": "candidate_revision.py",
@@ -37,7 +39,7 @@ EXECUTABLE_OPERATORS = {
     "06": "PRESERVE_CANDLE_VOLUME_PROFILE",
     "07": "PRESERVE_EIGHT_TIMEFRAME_MACD",
     "08": "DECODE_LAST_ZC_ORDER",
-    "09": "EVALUATE_COMPILED_OUTPUTS",
+    "09": "EVALUATE_FULL_LEARNED_RELATION_MODEL",
     "10": "APPLY_LEARNED_PERSISTENCE",
     "11": "FIRST_READY_OR_OBSERVED_1H_ZC",
 }
@@ -187,12 +189,12 @@ def _source_indexes(source: Mapping[str, Any]) -> tuple[dict[str, dict[str, Any]
     return base, context
 
 
-def _compile_base(output_id: str, source_address: str, record: Mapping[str, Any]) -> dict[str, Any]:
+def _compile_base(calculation_id: str, source_address: str, record: Mapping[str, Any]) -> dict[str, Any]:
     item = record["item"]
     feature = str(record["feature"])
     return {
-        "output_id": output_id,
-        "original_output_address": source_address,
+        "calculation_id": calculation_id,
+        "source_calculation_address": source_address,
         "background": record["background"],
         "output_source": "BASE",
         "calculation_group": "BASE_SINGLE_STRONGEST_CHANNEL",
@@ -221,12 +223,12 @@ def _compile_base(output_id: str, source_address: str, record: Mapping[str, Any]
     }
 
 
-def _compile_context(output_id: str, source_address: str, record: Mapping[str, Any]) -> dict[str, Any]:
+def _compile_context(calculation_id: str, source_address: str, record: Mapping[str, Any]) -> dict[str, Any]:
     item = record["item"]
     family = str(record["family"])
     return {
-        "output_id": output_id,
-        "original_output_address": source_address,
+        "calculation_id": calculation_id,
+        "source_calculation_address": source_address,
         "background": record["background"],
         "output_source": "CONTEXT",
         "calculation_group": family,
@@ -268,6 +270,58 @@ def _clean_stage(stage: Mapping[str, Any]) -> dict[str, Any]:
     return cleaned
 
 
+def _all_runtime_calculations(
+    source: Mapping[str, Any],
+) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]], int, int]:
+    """Compile every learned relation, independently of the evidence list."""
+
+    base_index, context_index = _source_indexes(source)
+    calculations: list[dict[str, Any]] = []
+    by_source_address: dict[str, dict[str, Any]] = {}
+    base_count = 0
+    context_count = 0
+
+    # Dictionary insertion order is the artifact's original calculation order.
+    for source_address, record in base_index.items():
+        calculation_id = f"CALC-{len(calculations) + 1:05d}"
+        calculation = _compile_base(calculation_id, source_address, record)
+        calculations.append(calculation)
+        by_source_address[source_address] = calculation
+        base_count += 1
+    for source_address, record in context_index.items():
+        calculation_id = f"CALC-{len(calculations) + 1:05d}"
+        calculation = _compile_context(calculation_id, source_address, record)
+        calculations.append(calculation)
+        by_source_address[source_address] = calculation
+        context_count += 1
+
+    return calculations, by_source_address, base_count, context_count
+
+
+def _historical_evidence(
+    selected: list[str], by_source_address: Mapping[str, Mapping[str, Any]]
+) -> list[dict[str, Any]]:
+    """Link past release results to calculations without making them executable selectors."""
+
+    evidence: list[dict[str, Any]] = []
+    for index, source_address in enumerate(selected, 1):
+        calculation = by_source_address.get(source_address)
+        if calculation is None:
+            raise ExportContractError(
+                f"historical evidence has no existing calculation: {source_address}"
+            )
+        evidence.append(
+            {
+                "evidence_id": f"EVIDENCE-{index:04d}",
+                "runtime_calculation_id": calculation["calculation_id"],
+                "historical_output_address": source_address,
+                "historical_output_value": deepcopy(calculation["output_value"]),
+                "role": "PAST_RELEASE_EVIDENCE_ONLY",
+            }
+        )
+    return evidence
+
+
 def build_executable_artifact(source: Mapping[str, Any], *, source_sha256: str) -> dict[str, Any]:
     if "decision_program" not in source:
         raise ExportContractError("source JSON has no existing Stage 03-11 decision_program")
@@ -287,26 +341,30 @@ def build_executable_artifact(source: Mapping[str, Any], *, source_sha256: str) 
     if len(runtime_inputs) != 64 or any(tuple(value["inputs"]) != runtime_inputs for value in behaviors.values()):
         raise ExportContractError("the three rulebooks do not share the existing 64 inputs")
 
+    calculations, by_source_address, base_count, context_count = (
+        _all_runtime_calculations(source)
+    )
+    if (base_count, context_count) != (5_363, 5_500):
+        raise ExportContractError(
+            "full learned relation model changed: "
+            f"base={base_count}, context={context_count}"
+        )
+
     selected = list(stages["11"]["learned_now_signatures"])
     if len(selected) != 2_775 or len(set(selected)) != 2_775:
-        raise ExportContractError("source does not contain 2,775 unique learned outputs")
-    base_index, context_index = _source_indexes(source)
-    compiled: list[dict[str, Any]] = []
-    base_count = 0
-    context_count = 0
-    for index, source_address in enumerate(selected, 1):
-        output_id = f"OUT-{index:04d}"
-        if source_address in context_index:
-            compiled.append(_compile_context(output_id, source_address, context_index[source_address]))
-            context_count += 1
-        elif source_address in base_index:
-            compiled.append(_compile_base(output_id, source_address, base_index[source_address]))
-            base_count += 1
-        else:
-            raise ExportContractError(f"learned output has no existing calculation: {source_address}")
-    if (context_count, base_count) != (2_499, 276):
+        raise ExportContractError("source does not contain 2,775 unique evidence outputs")
+    evidence = _historical_evidence(selected, by_source_address)
+    evidence_base_count = sum(
+        1
+        for item in evidence
+        if by_source_address[item["historical_output_address"]]["output_source"]
+        == "BASE"
+    )
+    evidence_context_count = len(evidence) - evidence_base_count
+    if (evidence_context_count, evidence_base_count) != (2_499, 276):
         raise ExportContractError(
-            f"existing output split changed: context={context_count}, base={base_count}"
+            "historical evidence split changed: "
+            f"context={evidence_context_count}, base={evidence_base_count}"
         )
 
     selector = deepcopy(source["selector"])
@@ -319,7 +377,7 @@ def build_executable_artifact(source: Mapping[str, Any], *, source_sha256: str) 
             "source_official_entry_rules_sha256": source.get(
                 "source_official_entry_rules_sha256"
             ),
-            "transformation": "STRUCTURED_EXPORT_ONLY_NO_RELEARNING",
+            "transformation": "FULL_RELATION_MODEL_EXPORT_NO_RELEARNING",
         },
         "runtime_input_contract": {
             "base_clock": source.get("base_clock", "closed_5m"),
@@ -343,6 +401,8 @@ def build_executable_artifact(source: Mapping[str, Any], *, source_sha256: str) 
             "trade_action_axis": "INDEPENDENT_WAIT_OR_NOW",
             "aggregation_across_methods": None,
             "single_total_score": None,
+            "runtime_decision_dependency": "FULL_RELATION_MODEL_ONLY",
+            "historical_evidence_dependency": False,
         },
         "existing_selector_values": {
             "action_gate": selector["action_gate"],
@@ -353,14 +413,22 @@ def build_executable_artifact(source: Mapping[str, Any], *, source_sha256: str) 
             ],
             "execution_policy": selector["execution_policy"],
         },
-        "output_contract": {
-            "count": len(compiled),
-            "context_calculation_outputs": context_count,
-            "base_interval_outputs": base_count,
-            "unmatched": 0,
-            "lookup_policy": "EXECUTE_STRUCTURED_CALCULATION_NOT_STRING_SEARCH",
+        "runtime_calculation_contract": {
+            "count": len(calculations),
+            "base_interval_calculations": base_count,
+            "context_relation_calculations": context_count,
+            "lookup_policy": "CALCULATE_CURRENT_RELATIONS_ACROSS_FULL_MODEL",
+            "selected_historical_output_filter_used": False,
         },
-        "compiled_outputs": compiled,
+        "runtime_calculations": calculations,
+        "historical_learning_evidence": {
+            "count": len(evidence),
+            "context_outputs": evidence_context_count,
+            "base_outputs": evidence_base_count,
+            "role": "VALIDATION_ONLY_NOT_A_RUNTIME_WHITELIST",
+            "used_by_runtime_router": False,
+            "results": evidence,
+        },
     }
 
 
@@ -389,13 +457,20 @@ def export_executable_artifact(source_path: str | Path, output_path: str | Path)
     return {
         "output": str(output_file),
         "sha256": _sha256(output_file),
-        **artifact["output_contract"],
+        "runtime_calculation_contract": artifact["runtime_calculation_contract"],
+        "historical_learning_evidence": {
+            key: value
+            for key, value in artifact["historical_learning_evidence"].items()
+            if key != "results"
+        },
     }
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("source", help="existing JSON containing decision_program and 2,775 outputs")
+    parser.add_argument(
+        "source", help="existing JSON containing decision_program and learned relation model"
+    )
     parser.add_argument("output", help="single executable JSON to create")
     args = parser.parse_args()
     print(
