@@ -1,0 +1,37 @@
+name: Audit TWIN relative learning
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - twin-relative-learning-v1
+    paths:
+      - "twin_core/**"
+      - "tests/test_twin_relative_learning.py"
+      - "twin_ohlcv/data/**"
+
+permissions:
+  contents: read
+
+jobs:
+  contract-and-data-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: twin_core/requirements.txt
+      - run: pip install -r twin_core/requirements.txt
+      - run: python -m unittest discover -s tests -p "test_twin_*.py" -v
+      - run: >-
+          python -m twin_core.learning.learning_worker
+          --ohlcv twin_ohlcv/data
+          --audit-only
+          --output twin_core/audit/current
+      - uses: actions/upload-artifact@v4
+        with:
+          name: twin-current-ohlcv-audit
+          path: twin_core/audit/current
+
