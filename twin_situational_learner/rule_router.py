@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 
-SCHEMA = "twin.executable-thought-program.v2"
+SCHEMA = "twin.executable-thought-program.v3"
 STAGE_ORDER = ("03", "04", "05", "06", "07", "08", "09", "10", "11")
 EXPECTED_OPERATORS = (
     "NEW_EXTREME_CANDIDATE_AXIS",
@@ -36,7 +36,7 @@ METHODS = (
     "MACRO_TREND",
     "MID_MACD_TREND",
 )
-BASE_GROUP = "BASE_SINGLE_STRONGEST_CHANNEL"
+METHOD_ORDER = {method: index for index, method in enumerate(METHODS)}
 
 
 class RouterContractError(ValueError):
@@ -70,6 +70,7 @@ def _output_rank(output: Mapping[str, Any]) -> tuple[Any, ...]:
     return (
         -float(value["state_probability"]),
         -int(value["event_support"]),
+        METHOD_ORDER[str(output["method"])],
         int(order.get("channel", 1_000_000)),
         int(order.get("rule", 1_000_000)),
         int(order.get("bin", 1_000_000)),
@@ -117,6 +118,18 @@ class RuleRouter:
         operators = tuple(stage["executable_operator"] for stage in calculation["stages"])
         if operators != EXPECTED_OPERATORS:
             raise RouterContractError("an existing Stage 03-11 calculation was replaced")
+        for stage in calculation["stages"]:
+            for required in (
+                "observation_start",
+                "fixed_observations",
+                "relative_calculations",
+                "filters",
+                "handoff_fields",
+            ):
+                if required not in stage:
+                    raise RouterContractError(
+                        f"Stage {stage['stage']} is missing {required}"
+                    )
         contract = self.program["runtime_input_contract"]
         if int(contract["count"]) != 64 or len(contract["features"]) != 64:
             raise RouterContractError("runtime input contract is not the existing 64")
@@ -171,6 +184,102 @@ class RuleRouter:
         missing = [feature for feature in self.runtime_inputs if feature not in observation]
         if missing:
             raise RouterContractError(f"closed-bar observation is missing {len(missing)} inputs")
+
+    @staticmethod
+    def _safe_ratio(numerator: Any, denominator: Any) -> float | None:
+        top = _number(numerator)
+        bottom = _number(denominator)
+        if top is None or bottom is None or bottom == 0.0:
+            return None
+        return top / bottom
+
+    def _materialize_observation(
+        self,
+        observation: Mapping[str, Any],
+        *,
+        seek_side: str,
+        current_candidate_extreme: float | None,
+    ) -> dict[str, Any]:
+        """Execute supplied module formulas when their raw operands are present."""
+
+        row = dict(observation)
+        if current_candidate_extreme is not None and {"high", "low"} <= row.keys():
+            current = float(row["high"] if seek_side == "H" else row["low"])
+            row["new_extreme_now"] = float(
+                current > current_candidate_extreme
+                if seek_side == "H"
+                else current < current_candidate_extreme
+            )
+
+        for target, raw in (
+            ("wave_age_log", "wave_age_bars"),
+            ("candidate_age_log", "candidate_age_bars"),
+            ("rearm_count_log", "rearm_count"),
+            ("rearm_gap_bars_log", "rearm_gap_bars"),
+        ):
+            if raw in row:
+                value = _number(row[raw])
+                if value is not None and value >= 0:
+                    row[target] = math.log1p(value)
+
+        if {"open", "high", "low", "close"} <= row.keys():
+            open_value = float(row["open"])
+            high_value = float(row["high"])
+            low_value = float(row["low"])
+            close_value = float(row["close"])
+            candle_range = high_value - low_value
+            if candle_range > 0.0:
+                row["candle_body_ratio"] = (
+                    abs(close_value - open_value) / candle_range
+                )
+                row["upper_wick_ratio"] = (
+                    high_value - max(open_value, close_value)
+                ) / candle_range
+                row["lower_wick_ratio"] = (
+                    min(open_value, close_value) - low_value
+                ) / candle_range
+                side_code = _number(row.get("side_code"))
+                if side_code is not None:
+                    direction = (
+                        1.0
+                        if close_value > open_value
+                        else -1.0
+                        if close_value < open_value
+                        else 0.0
+                    )
+                    close_location = (close_value - low_value) / candle_range
+                    row["candle_direction_for_side"] = direction * side_code
+                    row["close_position_for_side"] = (
+                        close_location if side_code > 0 else 1.0 - close_location
+                    )
+            if "volume" in row:
+                for target, reference in (
+                    ("volume_ratio20", "volume_sma20"),
+                    ("volume_ratio72", "volume_sma72"),
+                ):
+                    ratio = self._safe_ratio(row["volume"], row.get(reference))
+                    if ratio is not None:
+                        row[target] = ratio
+            range_ratio = self._safe_ratio(candle_range, row.get("range_sma20"))
+            if range_ratio is not None:
+                row["range_ratio20"] = range_ratio
+
+        side_code = _number(row.get("side_code"))
+        if side_code is not None:
+            for timeframe in TIMEFRAMES:
+                prefix = f"macd_{timeframe}_"
+                for metric in ("hist", "delta", "sign"):
+                    target = prefix + metric + "_for_side"
+                    raw = prefix + metric
+                    value = _number(row.get(raw))
+                    if value is not None:
+                        row[target] = value * side_code
+                age_target = prefix + "zc_age_log"
+                age_raw = prefix + "zc_age_bars"
+                age = _number(row.get(age_raw))
+                if age is not None and age >= 0:
+                    row[age_target] = math.log1p(age)
+        return row
 
     def _operand_value(
         self, operand: Mapping[str, Any], observation: Mapping[str, Any]
@@ -234,10 +343,27 @@ class RuleRouter:
         background = "ALIGNED" if raw == "+++" else "OPPOSED" if raw == "---" else "MIXED"
         return raw, background
 
-    def _stage03(self, observation: Mapping[str, Any]) -> dict[str, Any]:
+    def _stage03(
+        self,
+        observation: Mapping[str, Any],
+        *,
+        seek_side: str,
+        current_candidate_extreme: float | None,
+    ) -> dict[str, Any]:
         new_extreme = bool(int(float(observation["new_extreme_now"])))
+        compared_value = observation.get("high" if seek_side == "H" else "low")
         return {
             "stage": "03",
+            "observation_start": "ram.current_candidate_extreme",
+            "fixed_observation": {
+                "seek_side": seek_side,
+                "current_candidate_extreme": current_candidate_extreme,
+                "current_side_price": compared_value,
+            },
+            "relative_calculation": {
+                "operator": "SIDE_PRICE_BREACH",
+                "result": new_extreme,
+            },
             "candidate_transition": "REARM" if new_extreme else "HOLD",
             "new_extreme_now": new_extreme,
             "trade_action": "WAIT",
@@ -248,6 +374,11 @@ class RuleRouter:
         raw, background = self._background(observation)
         return {
             "stage": "04",
+            "observation_start": "stage03.current_candidate",
+            "relative_calculation": {
+                "operator": "SIDE_RELATIVE_SIGN_SIGNATURE",
+                "ordered_signs": raw,
+            },
             "context_signature_raw": raw,
             "context_background_name": background,
             "trade_action": "WAIT",
@@ -258,10 +389,13 @@ class RuleRouter:
     def _stage05(observation: Mapping[str, Any]) -> dict[str, Any]:
         return {
             "stage": "05",
+            "observation_start": "current_wave_start",
             "wave_age_bars": _decode_age(observation["wave_age_log"]),
+            "zone_age_bars": _decode_age(observation.get("zone_age_log")),
             "time_ratio_prev1": observation["time_ratio_prev1"],
             "time_ratio_prev2": observation["time_ratio_prev2"],
             "hardcoded_minimum_wait": None,
+            "relative_calculation": "CURRENT_WAVE_VS_PREVIOUS_WAVES",
             "trade_action": "WAIT",
             "handoff": "06",
         }
@@ -280,7 +414,9 @@ class RuleRouter:
         )
         return {
             "stage": "06",
+            "observation_start": "latest_closed_5m_candle",
             "profile": {field: observation[field] for field in fields},
+            "relative_calculation": "CANDLE_RANGE_AND_ROLLING_VOLUME_RELATIONS",
             "trade_action": "WAIT",
             "handoff": "07",
         }
@@ -302,6 +438,7 @@ class RuleRouter:
             )
         return {
             "stage": "07",
+            "observation_start": "latest_closed_timeframe_witness",
             "witnesses": witnesses,
             "timeframe_vote": None,
             "single_score": None,
@@ -325,6 +462,7 @@ class RuleRouter:
         ]
         return {
             "stage": "08",
+            "observation_start": "each_timeframe_last_zc",
             "last_zc_raw_positions": positions,
             "distinct_last_zc_position_count": len(groups),
             "signal_order_sequence": order,
@@ -340,33 +478,32 @@ class RuleRouter:
             for calculation in self.calculations_by_background[background]
             if self._matches(calculation, observation)
         ]
-        groups: dict[str, list[Mapping[str, Any]]] = {}
-        for calculation in matches:
-            groups.setdefault(str(calculation["calculation_group"]), []).append(
+        method_views: dict[str, dict[str, Mapping[str, Any] | None]] = {}
+        for method in METHODS:
+            base = [
                 calculation
-            )
-        strongest = {
-            group: min(calculations, key=_output_rank)
-            for group, calculations in groups.items()
-        }
-        context_matches = [
-            calculation
-            for calculation in matches
-            if calculation["output_source"] == "CONTEXT"
-        ]
+                for calculation in matches
+                if calculation["method"] == method
+                and calculation["output_source"] == "BASE"
+            ]
+            context = [
+                calculation
+                for calculation in matches
+                if calculation["method"] == method
+                and calculation["output_source"] == "CONTEXT"
+            ]
+            method_views[method] = {
+                "base": min(base, key=_output_rank) if base else None,
+                "context": min(context, key=_output_rank) if context else None,
+            }
         return {
             "stage": "09",
+            "observation_start": "stage03_to_stage08_handoffs",
             "runtime_model_calculation_count": len(
                 self.calculations_by_background[background]
             ),
             "satisfied_relation_count": len(matches),
-            "strongest_by_calculation_group": strongest,
-            "official_single_winner_candidates": {
-                "base": strongest.get(BASE_GROUP),
-                "context": min(context_matches, key=_output_rank)
-                if context_matches
-                else None,
-            },
+            "methods": method_views,
             "historical_2775_evidence_consulted": False,
             "ready_method_count": 0,
             "aggregation_across_groups": None,
@@ -395,7 +532,6 @@ class RuleRouter:
     ) -> dict[str, Any]:
         gate = float(self.selector["action_gate"])
         tolerance = float(self.selector["probability_tolerance"])
-        active = stage09["strongest_by_calculation_group"]
 
         def state_for(
             output: Mapping[str, Any] | None, *, run_key: str
@@ -438,42 +574,34 @@ class RuleRouter:
                 "reason": reason,
             }
 
-        official_candidates = stage09["official_single_winner_candidates"]
-        official_states = {
-            source: state_for(
-                official_candidates[source], run_key=f"OFFICIAL::{source.upper()}"
-            )
-            for source in ("base", "context")
-        }
-        ready = [
-            official_candidates[source]
-            for source in ("base", "context")
-            if official_candidates[source] is not None
-            and official_states[source]["ready"]
-        ]
-
-        parallel_base = state_for(
-            active.get(BASE_GROUP), run_key="PARALLEL::BASE"
-        )
         method_states: dict[str, dict[str, Any]] = {}
+        ready: list[Mapping[str, Any]] = []
         for method in METHODS:
-            context = state_for(
-                active.get(method), run_key=f"PARALLEL::CONTEXT::{method}"
+            view = stage09["methods"][method]
+            base = state_for(
+                view["base"], run_key=f"{method}::BASE"
             )
-            method_ready = bool(parallel_base["ready"] or context["ready"])
+            context = state_for(
+                view["context"], run_key=f"{method}::CONTEXT"
+            )
+            if base["ready"] and view["base"] is not None:
+                ready.append(view["base"])
+            if context["ready"] and view["context"] is not None:
+                ready.append(view["context"])
+            method_ready = bool(base["ready"] or context["ready"])
             method_states[method] = {
-                "base": parallel_base,
+                "base": base,
                 "context": context,
                 "ready": method_ready,
                 "wait_reason": "METHOD_READY"
                 if method_ready
-                else f"BASE:{parallel_base['reason']}|CONTEXT:{context['reason']}",
+                else f"BASE:{base['reason']}|CONTEXT:{context['reason']}",
             }
         return {
             "stage": "10",
-            "official_single_winner_states": official_states,
-            "parallel_method_states": method_states,
-            "parallel_ready_method_count": sum(
+            "observation_start": "stage09_method_candidates",
+            "methods": method_states,
+            "ready_method_count": sum(
                 int(state["ready"]) for state in method_states.values()
             ),
             "ready_output_count": len(ready),
@@ -521,6 +649,7 @@ class RuleRouter:
             source = "WAIT"
         return {
             "stage": "11",
+            "observation_start": "stage10_ready_candidates",
             "candidate_transition": stage03["candidate_transition"],
             "trade_action": action,
             "action_source": source,
@@ -540,26 +669,36 @@ class RuleRouter:
         seek_side: str,
         raw_position: int,
         observed_1h_zc_switch: bool | None = None,
+        current_candidate_extreme: float | None = None,
     ) -> dict[str, Any]:
         side = seek_side.upper()
         if side not in {"H", "L"}:
             raise RouterContractError("seek_side must be H or L")
         self._begin_event(event_key)
-        self._validate_observation(observation)
-        stage03 = self._stage03(observation)
-        reset_reasons = self._reset_evidence_runs_if_required(
-            observation, new_extreme_now=bool(stage03["new_extreme_now"])
+        row = self._materialize_observation(
+            observation,
+            seek_side=side,
+            current_candidate_extreme=current_candidate_extreme,
         )
-        stage04 = self._stage04(observation)
-        stage05 = self._stage05(observation)
-        stage06 = self._stage06(observation)
-        stage07 = self._stage07(observation)
-        stage08 = self._stage08(observation, raw_position)
-        stage09 = self._stage09(observation, stage04["context_background_name"])
+        self._validate_observation(row)
+        stage03 = self._stage03(
+            row,
+            seek_side=side,
+            current_candidate_extreme=current_candidate_extreme,
+        )
+        reset_reasons = self._reset_evidence_runs_if_required(
+            row, new_extreme_now=bool(stage03["new_extreme_now"])
+        )
+        stage04 = self._stage04(row)
+        stage05 = self._stage05(row)
+        stage06 = self._stage06(row)
+        stage07 = self._stage07(row)
+        stage08 = self._stage08(row, raw_position)
+        stage09 = self._stage09(row, stage04["context_background_name"])
         stage10 = self._stage10(stage09, side, reset_reasons)
-        fallback = self._observed_1h_zc_switch(observation, observed_1h_zc_switch)
+        fallback = self._observed_1h_zc_switch(row, observed_1h_zc_switch)
         stage11 = self._stage11(stage03, stage10, fallback)
-        self.history.append(dict(observation))
+        self.history.append(row)
         stages = {
             "03": stage03,
             "04": stage04,
@@ -599,6 +738,7 @@ def route_jsonl(program_path: str | Path, input_path: str | Path, output_path: s
                     seek_side=str(item["seek_side"]),
                     raw_position=int(item["raw_position"]),
                     observed_1h_zc_switch=item.get("observed_1h_zc_switch"),
+                    current_candidate_extreme=item.get("current_candidate_extreme"),
                 )
             except Exception as error:
                 raise RouterContractError(f"input line {line_number}: {error}") from error

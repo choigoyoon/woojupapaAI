@@ -19,7 +19,7 @@ import tempfile
 from typing import Any, Mapping
 
 
-SCHEMA = "twin.executable-thought-program.v2"
+SCHEMA = "twin.executable-thought-program.v3"
 STAGE_ORDER = ("03", "04", "05", "06", "07", "08", "09", "10", "11")
 STAGE_MODULES = {
     "03": "candidate_revision.py",
@@ -54,6 +54,120 @@ FORBIDDEN_RUNTIME_FIELDS = (
     "official_rule_ready",
     "official_wait_state",
 )
+METHODS = (
+    "WAVE_REARM_AGE",
+    "MOMENTUM_SPEED",
+    "CANDLE_REVERSAL",
+    "VOLUME_RANGE",
+    "MACRO_TREND",
+    "MID_MACD_TREND",
+)
+BLUEPRINT_FILENAME = "stages_03_to_11_authentic_blueprint.json"
+STAGE_HANDOFF_FIELDS = {
+    "03": ("seek_side", "candidate_transition", "new_extreme_now", "candidate_age_log", "rearm_count_log", "rearm_gap_bars_log", "rearm_extension_pct", "rearm_extension_ratio"),
+    "04": ("context_signature_raw", "context_signature_for_side", "context_background_name"),
+    "05": ("wave_age_bars", "zone_age_bars", "time_ratio_prev1", "time_ratio_prev2", "move_ratio_prev1", "move_ratio_prev2", "wave_move_pct_so_far", "zone_move_pct_so_far", "speed_recent3", "speed_ratio_3_to_12"),
+    "06": ("candle_direction_for_side", "candle_body_ratio", "upper_wick_ratio", "lower_wick_ratio", "close_position_for_side", "volume_ratio20", "volume_ratio72", "range_ratio20"),
+    "07": ("eight_timeframe_macd_witnesses",),
+    "08": ("last_zc_raw_positions", "distinct_last_zc_position_count", "signal_order_sequence"),
+    "09": ("six_method_base_candidates", "six_method_context_candidates"),
+    "10": ("per_method_run", "per_method_wait_reason", "active_blocker_count", "ready_candidates"),
+    "11": ("candidate_transition", "trade_action", "action_source", "entry_fill"),
+}
+STAGE_EXECUTION_CONTRACTS = {
+    "03": {
+        "observation_start": "ram.current_candidate_extreme",
+        "fixed_observations": ["seek_side", "latest_closed_5m.high", "latest_closed_5m.low"],
+        "relative_calculations": [
+            {
+                "output": "new_extreme_now",
+                "operator": "SIDE_PRICE_BREACH",
+                "formula": "high[t] > ram.current_candidate_extreme if seek_side == 'H' else low[t] < ram.current_candidate_extreme",
+            }
+        ],
+        "filters": ["SAME_SEEK_SIDE", "CURRENT_CANDIDATE_PREFIX_ONLY"],
+    },
+    "04": {
+        "observation_start": "stage03.current_candidate",
+        "fixed_observations": ["side_code", "macd_4h_sign_causal", "macd_1d_sign_causal", "macd_1w_sign_causal"],
+        "relative_calculations": [
+            {
+                "output": "context_signature_for_side",
+                "operator": "SIDE_RELATIVE_SIGN_SIGNATURE",
+                "formula": "macd_{tf}_sign_for_side = macd_{tf}_sign_causal * side_code",
+            }
+        ],
+        "filters": ["PRESERVE_EXACT_THREE_SIGN_ORDER", "NO_CLUSTERING"],
+    },
+    "05": {
+        "observation_start": "current_wave_start",
+        "fixed_observations": ["wave_age_log", "zone_age_log", "previous_wave_1", "previous_wave_2"],
+        "relative_calculations": [
+            {"output": "wave_age_bars", "operator": "ROUND_EXPM1", "formula": "round(expm1(wave_age_log))"},
+            {"output": "zone_age_bars", "operator": "ROUND_EXPM1", "formula": "round(expm1(zone_age_log))"},
+            {"output": "time_ratio_prev1", "operator": "SAFE_RATIO", "formula": "current_wave_elapsed_bars / previous_wave_1_elapsed_bars"},
+            {"output": "time_ratio_prev2", "operator": "SAFE_RATIO", "formula": "current_wave_elapsed_bars / previous_wave_2_elapsed_bars"},
+        ],
+        "filters": ["MISSING_PRIOR_WAVE_STAYS_MISSING", "NO_HARDCODED_MINIMUM_WAIT"],
+    },
+    "06": {
+        "observation_start": "latest_closed_5m_candle",
+        "fixed_observations": ["open", "high", "low", "close", "volume", "volume_sma20", "volume_sma72", "range_sma20", "side_code"],
+        "relative_calculations": [
+            {"output": "candle_body_ratio", "operator": "SAFE_RATIO", "formula": "abs(close-open)/(high-low)"},
+            {"output": "upper_wick_ratio", "operator": "SAFE_RATIO", "formula": "(high-max(open,close))/(high-low)"},
+            {"output": "lower_wick_ratio", "operator": "SAFE_RATIO", "formula": "(min(open,close)-low)/(high-low)"},
+            {"output": "volume_ratio20", "operator": "SAFE_RATIO", "formula": "volume/volume_sma20"},
+            {"output": "volume_ratio72", "operator": "SAFE_RATIO", "formula": "volume/volume_sma72"},
+            {"output": "range_ratio20", "operator": "SAFE_RATIO", "formula": "(high-low)/range_sma20"},
+        ],
+        "filters": ["ZERO_RANGE_SAFE", "MISSING_VOLUME_STAYS_MISSING"],
+    },
+    "07": {
+        "observation_start": "latest_closed_timeframe_witness",
+        "fixed_observations": ["side_code", "macd_5m_through_1w_hist", "macd_5m_through_1w_delta", "macd_5m_through_1w_zc_state"],
+        "relative_calculations": [
+            {"output": "macd_{tf}_hist_for_side", "operator": "SIDE_MULTIPLY", "formula": "macd_{tf}_hist * side_code"},
+            {"output": "macd_{tf}_delta_for_side", "operator": "SIDE_MULTIPLY", "formula": "macd_{tf}_delta * side_code"},
+        ],
+        "filters": ["KEEP_ALL_EIGHT_TIMEFRAMES", "NO_TIMEFRAME_VOTE", "NO_SINGLE_SCORE"],
+    },
+    "08": {
+        "observation_start": "each_timeframe_last_zc",
+        "fixed_observations": ["raw_position", "macd_5m_through_1w_zc_age_log"],
+        "relative_calculations": [
+            {"output": "last_zc_raw_position", "operator": "POSITION_MINUS_ROUND_EXPM1", "formula": "raw_position - round(expm1(zc_age_log))"},
+            {"output": "signal_order_sequence", "operator": "ORDER_WITH_SIMULTANEOUS_TIES", "formula": "sort distinct last_zc_raw_position; keep equal positions tied"},
+        ],
+        "filters": ["NEVER_BREAK_SIMULTANEOUS_TIE", "NO_SEQUENCE_SCORE"],
+    },
+    "09": {
+        "observation_start": "stage03_to_stage08_handoffs",
+        "fixed_observations": ["canonical_64_features", "three_background_rulebooks", "six_method_ownership"],
+        "relative_calculations": [
+            {"output": "base_candidate", "operator": "STRONGEST_SATISFIED_INTERVAL_PER_METHOD", "formula": "current relative value in learned interval"},
+            {"output": "context_candidate", "operator": "STRONGEST_ALL_CONDITIONS_PER_METHOD", "formula": "all current/prior relative comparisons are true"},
+        ],
+        "filters": ["NO_CROSS_METHOD_AGGREGATION", "NO_SINGLE_TOTAL_SCORE", "NO_TRADE_ACTION"],
+    },
+    "10": {
+        "observation_start": "stage09_method_candidates",
+        "fixed_observations": ["action_gate", "probability_tolerance", "minimum_support", "learned_required_persistence"],
+        "relative_calculations": [
+            {"output": "run_length", "operator": "CONSECUTIVE_SAME_RELATION", "formula": "reset when relation signature changes"},
+            {"output": "source_ready", "operator": "ALL_BLOCKERS_CLEARED", "formula": "support >= minimum and probability + tolerance >= gate and run >= required"},
+        ],
+        "filters": ["BASE_OR_CONTEXT_WITHIN_EACH_METHOD", "WAIT_WHILE_ANY_REQUIRED_BLOCKER_REMAINS"],
+    },
+    "11": {
+        "observation_start": "stage10_ready_candidates",
+        "fixed_observations": ["candidate_transition_axis", "trade_action_axis", "observed_1h_zc_switch", "event_release_state"],
+        "relative_calculations": [
+            {"output": "trade_action", "operator": "ORDERED_FINAL_GATE", "formula": "first ready current relation -> NOW; else observed 1h ZC switch -> NOW; else WAIT"}
+        ],
+        "filters": ["ONE_RELEASE_PER_EVENT", "REARM_AND_NOW_ARE_INDEPENDENT", "NEXT_CLOSED_5M_OPEN"],
+    },
+}
 
 
 class ExportContractError(ValueError):
@@ -74,6 +188,52 @@ def _read_object(path: Path) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ExportContractError("source rule artifact must be a JSON object")
     return value
+
+
+def _blueprint_stage(blueprint: Mapping[str, Any], number: str) -> dict[str, Any]:
+    matches = [
+        value
+        for key, value in blueprint.get("stages", {}).items()
+        if str(key).startswith(f"{number}_")
+    ]
+    if len(matches) != 1 or not isinstance(matches[0], dict):
+        raise ExportContractError(f"blueprint does not contain exactly one Stage {number}")
+    return deepcopy(matches[0])
+
+
+def _module_execution_program(
+    decision_stages: Mapping[str, Any], blueprint: Mapping[str, Any]
+) -> list[dict[str, Any]]:
+    program: list[dict[str, Any]] = []
+    for number in STAGE_ORDER:
+        supplied = _blueprint_stage(blueprint, number)
+        if supplied.get("module") != STAGE_MODULES[number]:
+            raise ExportContractError(
+                f"blueprint Stage {number} is not owned by {STAGE_MODULES[number]}"
+            )
+        fixed_action = "DYNAMIC_FINAL_GATE" if number == "11" else "WAIT"
+        program.append(
+            {
+                "stage": number,
+                "module": STAGE_MODULES[number],
+                "executable_operator": EXECUTABLE_OPERATORS[number],
+                "observation_start": STAGE_EXECUTION_CONTRACTS[number][
+                    "observation_start"
+                ],
+                "fixed_observations": deepcopy(
+                    STAGE_EXECUTION_CONTRACTS[number]["fixed_observations"]
+                ),
+                "relative_calculations": deepcopy(
+                    STAGE_EXECUTION_CONTRACTS[number]["relative_calculations"]
+                ),
+                "filters": deepcopy(STAGE_EXECUTION_CONTRACTS[number]["filters"]),
+                "fixed_action": fixed_action,
+                "handoff_fields": list(STAGE_HANDOFF_FIELDS[number]),
+                "source_blueprint_contract": supplied,
+                "source_decision_contract": _clean_stage(decision_stages[number]),
+            }
+        )
+    return program
 
 
 def _feature_origin(feature: str) -> dict[str, str]:
@@ -106,6 +266,28 @@ def _feature_origin(feature: str) -> dict[str, str]:
         "module": "time_distribution.py",
         "observation_start": "CURRENT_WAVE_PREFIX",
     }
+
+
+def _base_feature_method(feature: str) -> str:
+    """Use the supplied six-method module's observation ownership."""
+
+    if feature.startswith("macd_"):
+        return (
+            "MACRO_TREND"
+            if any(f"macd_{timeframe}_" in feature for timeframe in ("4h", "1d", "1w"))
+            else "MID_MACD_TREND"
+        )
+    if feature.startswith("volume_") or feature == "range_ratio20":
+        return "VOLUME_RANGE"
+    if feature.startswith("candle_") or feature in {
+        "upper_wick_ratio",
+        "lower_wick_ratio",
+        "close_position_for_side",
+    }:
+        return "CANDLE_REVERSAL"
+    if feature.startswith("speed_") or feature.startswith("candidate_rejection_"):
+        return "MOMENTUM_SPEED"
+    return "WAVE_REARM_AGE"
 
 
 def _relative_operand(feature: str) -> dict[str, Any]:
@@ -192,12 +374,15 @@ def _source_indexes(source: Mapping[str, Any]) -> tuple[dict[str, dict[str, Any]
 def _compile_base(calculation_id: str, source_address: str, record: Mapping[str, Any]) -> dict[str, Any]:
     item = record["item"]
     feature = str(record["feature"])
+    method = _base_feature_method(feature)
     return {
         "calculation_id": calculation_id,
         "source_calculation_address": source_address,
         "background": record["background"],
         "output_source": "BASE",
-        "calculation_group": "BASE_SINGLE_STRONGEST_CHANNEL",
+        "method": method,
+        "calculation_path": "BASE",
+        "calculation_group": f"{method}::BASE",
         "calculation_link": {
             "origin": _feature_origin(feature),
             "recognition_stage": "09",
@@ -231,7 +416,9 @@ def _compile_context(calculation_id: str, source_address: str, record: Mapping[s
         "source_calculation_address": source_address,
         "background": record["background"],
         "output_source": "CONTEXT",
-        "calculation_group": family,
+        "method": family,
+        "calculation_path": "CONTEXT",
+        "calculation_group": f"{family}::CONTEXT",
         "calculation_link": {
             "origins": sorted(
                 {
@@ -322,7 +509,13 @@ def _historical_evidence(
     return evidence
 
 
-def build_executable_artifact(source: Mapping[str, Any], *, source_sha256: str) -> dict[str, Any]:
+def build_executable_artifact(
+    source: Mapping[str, Any],
+    blueprint: Mapping[str, Any],
+    *,
+    source_sha256: str,
+    blueprint_sha256: str,
+) -> dict[str, Any]:
     if "decision_program" not in source:
         raise ExportContractError("source JSON has no existing Stage 03-11 decision_program")
     decision_program = source["decision_program"]
@@ -368,11 +561,13 @@ def build_executable_artifact(source: Mapping[str, Any], *, source_sha256: str) 
         )
 
     selector = deepcopy(source["selector"])
+    module_program = _module_execution_program(stages, blueprint)
     return {
         "schema": SCHEMA,
         "source": {
             "schema": source.get("schema"),
             "sha256": source_sha256,
+            "stage_blueprint_sha256": blueprint_sha256,
             "official_artifact": source.get("official_artifact"),
             "source_official_entry_rules_sha256": source.get(
                 "source_official_entry_rules_sha256"
@@ -388,15 +583,7 @@ def build_executable_artifact(source: Mapping[str, Any], *, source_sha256: str) 
         },
         "calculation_program": {
             "stage_order": list(STAGE_ORDER),
-            "stages": [
-                {
-                    "stage": number,
-                    "module": STAGE_MODULES[number],
-                    "executable_operator": EXECUTABLE_OPERATORS[number],
-                    "source_stage_contract": _clean_stage(stages[number]),
-                }
-                for number in STAGE_ORDER
-            ],
+            "stages": module_program,
             "candidate_transition_axis": "REARM_ON_NEW_EXTREME_ELSE_HOLD",
             "trade_action_axis": "INDEPENDENT_WAIT_OR_NOW",
             "aggregation_across_methods": None,
@@ -432,11 +619,26 @@ def build_executable_artifact(source: Mapping[str, Any], *, source_sha256: str) 
     }
 
 
-def export_executable_artifact(source_path: str | Path, output_path: str | Path) -> dict[str, Any]:
+def export_executable_artifact(
+    source_path: str | Path,
+    output_path: str | Path,
+    blueprint_path: str | Path | None = None,
+) -> dict[str, Any]:
     source_file = Path(source_path).expanduser().resolve()
     output_file = Path(output_path).expanduser().resolve()
+    blueprint_file = (
+        Path(blueprint_path).expanduser().resolve()
+        if blueprint_path is not None
+        else source_file.with_name(BLUEPRINT_FILENAME)
+    )
     source = _read_object(source_file)
-    artifact = build_executable_artifact(source, source_sha256=_sha256(source_file))
+    blueprint = _read_object(blueprint_file)
+    artifact = build_executable_artifact(
+        source,
+        blueprint,
+        source_sha256=_sha256(source_file),
+        blueprint_sha256=_sha256(blueprint_file),
+    )
     output_file.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(
         mode="w",
@@ -472,10 +674,14 @@ def main() -> int:
         "source", help="existing JSON containing decision_program and learned relation model"
     )
     parser.add_argument("output", help="single executable JSON to create")
+    parser.add_argument(
+        "--blueprint",
+        help=f"supplied {BLUEPRINT_FILENAME}; defaults beside the source JSON",
+    )
     args = parser.parse_args()
     print(
         json.dumps(
-            export_executable_artifact(args.source, args.output),
+            export_executable_artifact(args.source, args.output, args.blueprint),
             ensure_ascii=False,
             indent=2,
         )
