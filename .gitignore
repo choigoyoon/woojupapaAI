@@ -13,3 +13,12 @@ secrets.json
 # IDE
 .vscode/
 .idea/
+
+# Private TWIN teaching artifacts. Code validates these by hash at runtime;
+# the 2,775 rules and official ledgers must not be committed to this public repo.
+twin_private/
+test_entry_rules_with_stage_11.json
+entry_rules.json
+event_ledger_4136_study_only_v1.parquet
+causal_market_rows_v1.parquet
+work/

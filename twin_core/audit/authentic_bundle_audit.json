@@ -1,0 +1,57 @@
+{
+  "schema": "twin.authentic-bundle-audit-summary.v1",
+  "status": "STRUCTURE_PASS_REPLAY_SOURCE_MISSING",
+  "provided_file_sha256": "PASS_12_OF_12",
+  "stages": {
+    "order": ["03", "04", "05", "06", "07", "08", "09", "10", "11"],
+    "module_matches": 9,
+    "now_before_stage_11": 0,
+    "candidate_and_trade_axes_independent": true
+  },
+  "rules": {
+    "selected_signatures": 2775,
+    "matched_context_rules": 2499,
+    "matched_base_bins": 276,
+    "unmatched": 0,
+    "runtime_inputs": 64,
+    "condition_features_outside_runtime_contract": 0,
+    "condition_operators": [">", "<="],
+    "temporal_change_horizons": [1, 2, 3, 6, 12, 24, 48, 96]
+  },
+  "official_ledger": {
+    "events": 4136,
+    "H": 2068,
+    "L": 2068,
+    "alternating": true,
+    "raw_index_strictly_increasing": true,
+    "first_raw_index": 452,
+    "last_raw_index": 656510
+  },
+  "public_ohlcv": {
+    "status": "PASS_OBSERVATION_ONLY",
+    "rows": 660853,
+    "continuous_5m": true,
+    "duplicate_timestamps": 0,
+    "official_exact_replay_source": false
+  },
+  "exact_replay": {
+    "executed": false,
+    "blocked_by": "MISSING_HASH_LOCKED_CAUSAL_MARKET_ROWS_AND_656136_PREFIX_FEATURE_REBUILD",
+    "required_causal_market_sha256": "17fdd7567236e22fa1374aeef93cf83a54e3766db2694d0f4650647b0493ea05"
+  },
+  "artifact_claims_not_recomputed": {
+    "rule_now": 4000,
+    "zc_fallback_now": 136,
+    "win_rate_pct": 95.0181
+  },
+  "source_discrepancies": {
+    "manifest_cross_feature_intersection": true,
+    "three_behavior_rulebooks_cross_feature_intersection": false,
+    "stage07_fields_outside_runtime_64": [
+      "macd_2h_zc_count_so_far",
+      "macd_4h_zc_count_so_far",
+      "macd_1d_zc_count_so_far",
+      "macd_1w_zc_count_so_far"
+    ]
+  }
+}

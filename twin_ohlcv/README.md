@@ -41,11 +41,16 @@ fill_source
 ## Intended inspection flow
 
 ```text
-OHLCV observations
--> 16 observation modules
--> fixed action ledger used only during training
--> nine-stage relative reasoning
--> WAIT / NOW / HOLD / REARM
+public OHLCV observations
+-> structural and observation-only checks
+-> authentic Stage 03-11 modules
+-> candidate axis: HOLD / REARM
+-> trade-action axis: WAIT / NOW
 -> post-hoc comparison and correction
 ```
+
+This table is not automatically interchangeable with the private
+`causal_market_rows_v1.parquet` locked by the authentic transfer manifest.
+Exact 4,136-event parity must remain blocked until that source hash and the
+656,136-row causal feature build are available.
 
