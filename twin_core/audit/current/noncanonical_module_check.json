@@ -1,0 +1,50 @@
+{
+  "schema": "twin_relative_learning_module_check_v1",
+  "status": "NONCANONICAL_DIAGNOSTIC_ONLY",
+  "warning": "These are connectivity and behavior diagnostics, not canonical performance results.",
+  "ohlcv_rows": 660853,
+  "probe_events": {
+    "events": 4116,
+    "L": 2058,
+    "H": 2058,
+    "expected_events": 4136,
+    "shortfall": 20,
+    "canonical": false
+  },
+  "module_contract": {
+    "modules": 16,
+    "modules_completed": 16,
+    "thinking_stages": 9,
+    "prefix_rows": 664827,
+    "transition_cases": 4115,
+    "future_fields_in_rules": []
+  },
+  "learned_frontier": {
+    "rules": 16,
+    "families": {
+      "RELATIVE_PATH": 13,
+      "MULTITF_MOMENTUM": 2,
+      "CANDIDATE_FLOW": 1
+    },
+    "boundary_source": "first_counterexample_frontier"
+  },
+  "in_sample_behavior_only": {
+    "exact_now": 9,
+    "premature_now": 0,
+    "missed_now": 4106,
+    "event_recall": 0.002187120291616039,
+    "predicted_now_precision": 1.0,
+    "interpretation": "The first-counterexample frontier correctly waits when history conflicts, but is intentionally too conservative until the official 4,136-event ledger is supplied for canonical calibration."
+  },
+  "replay": {
+    "rows": 660713,
+    "actions": {
+      "HOLD": 324034,
+      "WAIT": 297197,
+      "REARM": 39476,
+      "NOW": 6
+    },
+    "execution": "next_actual_open_only"
+  }
+}
+
