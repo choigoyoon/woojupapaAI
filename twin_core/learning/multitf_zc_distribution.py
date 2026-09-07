@@ -22,6 +22,7 @@ TIMEFRAMES = {
     "1d": 24 * 60 * 60,
     "1w": 7 * 24 * 60 * 60,
 }
+TIMEFRAME_OFFSETS = {"1w": 4 * 24 * 60 * 60}  # Monday 00:00 UTC from Unix Thursday.
 
 
 def _ema_step(value: float, previous: float | None, span: int) -> float:
@@ -59,7 +60,8 @@ def compute_all_8tf_zc_distributions(prefix: pd.DataFrame) -> pd.DataFrame:
     close = unique["close"].to_numpy(dtype=np.float64)
     feature_columns: list[str] = []
     for name, seconds in TIMEFRAMES.items():
-        buckets = timestamp_ns // (seconds * 1_000_000_000)
+        offset_ns = TIMEFRAME_OFFSETS.get(name, 0) * 1_000_000_000
+        buckets = (timestamp_ns - offset_ns) // (seconds * 1_000_000_000)
         hist, slope = _forming_macd(close, buckets)
         scale = np.maximum(np.abs(close), np.finfo(float).eps)
         unique[f"macd_{name}_hist_relative"] = hist / scale
@@ -76,3 +78,4 @@ def compute_all_8tf_zc_distributions(prefix: pd.DataFrame) -> pd.DataFrame:
     for name in TIMEFRAMES:
         result[f"macd_{name}_directional_slope"] = result[f"macd_{name}_slope_relative"] * direction
     return result
+
