@@ -51,33 +51,31 @@ RELATIVE_FEATURES = (
 
 
 def _best_observed_split(values: np.ndarray, labels: np.ndarray) -> dict[str, object] | None:
-    order = np.argsort(values, kind="mergesort")
-    x = values[order]
-    y = labels[order].astype(np.int64)
-    valid_split = np.flatnonzero(x[:-1] < x[1:])
-    positives, negatives = int(y.sum()), int(len(y) - y.sum())
-    if not len(valid_split) or not positives or not negatives:
+    positives, negatives = int(labels.sum()), int(len(labels) - labels.sum())
+    if not positives or not negatives:
         return None
-    positive_left = np.cumsum(y)[valid_split]
-    count_left = valid_split + 1
-    negative_left = count_left - positive_left
-    positive_right = positives - positive_left
-    negative_right = negatives - negative_left
+    now_values = values[labels]
+    wait_values = values[~labels]
+    candidates: list[tuple[int, str, float]] = []
 
-    score_upper = 0.5 * (positive_right / positives + negative_left / negatives)
-    score_lower = 0.5 * (positive_left / positives + negative_right / negatives)
-    upper_index = int(np.argmax(score_upper))
-    lower_index = int(np.argmax(score_lower))
-    if score_upper[upper_index] >= score_lower[lower_index]:
-        chosen, operator, score = upper_index, ">", float(score_upper[upper_index])
-        true_now = int(positive_right[chosen])
-        true_wait = int(negative_right[chosen])
-    else:
-        chosen, operator, score = lower_index, "<=", float(score_lower[lower_index])
-        true_now = int(positive_left[chosen])
-        true_wait = int(negative_left[chosen])
-    split_at = int(valid_split[chosen])
-    threshold = float(x[split_at] + (x[split_at + 1] - x[split_at]) / 2.0)
+    # Start at the most selective edge and widen until the first historical
+    # counterexample would enter. The midpoint is therefore observed, not set
+    # by an analyst (and is not an RSI-style universal number).
+    wait_max = float(np.max(wait_values))
+    upper_now = now_values[now_values > wait_max]
+    if len(upper_now):
+        nearest_now = float(np.min(upper_now))
+        candidates.append((int(len(upper_now)), ">", wait_max + (nearest_now - wait_max) / 2.0))
+    wait_min = float(np.min(wait_values))
+    lower_now = now_values[now_values < wait_min]
+    if len(lower_now):
+        nearest_now = float(np.max(lower_now))
+        candidates.append((int(len(lower_now)), "<=", nearest_now + (wait_min - nearest_now) / 2.0))
+    if not candidates:
+        return None
+    true_now, operator, threshold = max(candidates, key=lambda item: (item[0], item[1] == ">"))
+    recall = true_now / positives
+    score = 0.5 * (recall + 1.0)  # specificity is one at the learned frontier.
     return {
         "operator": operator,
         "threshold": threshold,
@@ -85,7 +83,7 @@ def _best_observed_split(values: np.ndarray, labels: np.ndarray) -> dict[str, ob
         "now_support": positives,
         "wait_support": negatives,
         "true_now_support": true_now,
-        "true_wait_support": true_wait,
+        "true_wait_support": 0,
     }
 
 
@@ -137,7 +135,7 @@ def fit_independent_evidence(
                     "feature": feature,
                     **learned,
                     "source_rows": int(finite.sum()),
-                    "boundary_source": "observed_fixed_action_frontier",
+                    "boundary_source": "first_counterexample_frontier",
                 }
             )
     columns = [
@@ -163,3 +161,4 @@ def fit_independent_evidence(
             ["balanced_accuracy", "now_support", "rule_id"], ascending=[False, False, True]
         ).reset_index(drop=True)
     return rules
+
