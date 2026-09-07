@@ -1,0 +1,64 @@
+{
+  "schema": "twin.reconstructed-intermediate-ledger.v1",
+  "status": "RECONSTRUCTED_FROM_AVAILABLE_FORMULAS_NOT_ORIGINAL_HASH",
+  "source_ohlcv": {
+    "file": "bybit_btc_5m_filled.parquet",
+    "rows": 656855,
+    "historical_prefix_last_raw_position": 656543
+  },
+  "source_program": {
+    "file": "twin_executable_thought_program_v3.json",
+    "sha256": "4fe93e0f18abec59036b1ec8072a7ceedf0a57f21222b7fc954f11f57da40fa2"
+  },
+  "runtime_uses_historical_2775_evidence": false,
+  "stage_order": [
+    "03",
+    "04",
+    "05",
+    "06",
+    "07",
+    "08",
+    "09",
+    "10",
+    "11"
+  ],
+  "numeric_storage": "float32_after_float64_formula_validation",
+  "summary": {
+    "status": "RECONSTRUCTED_FROM_AVAILABLE_FORMULAS",
+    "rows": 656136,
+    "events": 4136,
+    "stage_order": [
+      "03",
+      "04",
+      "05",
+      "06",
+      "07",
+      "08",
+      "09",
+      "10",
+      "11"
+    ],
+    "rule_now": 3801,
+    "observed_1h_zc_state_now": 335,
+    "too_fast_relative_to_study_pivot": 2,
+    "historical_2775_evidence_consulted": false,
+    "original_missing_intermediate_hash_claimed": false
+  },
+  "files": [
+    {
+      "file": "professor_16_modules_intermediate_ledger_reconstructed_v1.parquet",
+      "rows": 656136,
+      "columns": 174,
+      "bytes": 98081012,
+      "sha256": "2fd27529e874cebe31808dc1dfee0dba7f51a0413348af2c3cccd87dd20b5252"
+    },
+    {
+      "file": "stage11_event_actions_reconstructed_v1.parquet",
+      "rows": 4136,
+      "columns": 9,
+      "bytes": 58785,
+      "sha256": "8ecee187c087f0beacf1afa658c26d4e17104090c7fc71800a8ab343d2c89770"
+    }
+  ],
+  "original_missing_parquet_hash_claimed": false
+}
