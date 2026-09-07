@@ -54,34 +54,73 @@ def compute_threshold_frontier(
     result = observations.copy()
     now_score = np.zeros(len(result), dtype=float)
     wait_score = np.zeros(len(result), dtype=float)
+    log_odds = np.zeros(len(result), dtype=float)
+    retrieved = np.zeros(len(result), dtype=np.int32)
     supporting = np.zeros(len(result), dtype=np.int32)
     counterexamples = np.zeros(len(result), dtype=np.int32)
 
     if not rules.empty:
         assert_runtime_safe_rules(rules)
-        for rule in rules.itertuples(index=False):
-            if rule.feature not in result.columns:
-                raise TwinContractError(f"threshold_frontier: missing learned feature {rule.feature}")
-            value = pd.to_numeric(result[rule.feature], errors="coerce").to_numpy(dtype=float)
-            applicable = (
-                result["target_side"].eq(rule.target_side).to_numpy()
-                & result["market_context"].eq(rule.market_context).to_numpy()
-                & np.isfinite(value)
+        # Correlated features must not become duplicate votes. Use the strongest
+        # learned relation from each of the six independent evidence families.
+        selected = (
+            rules.sort_values(["balanced_accuracy", "source_rows"], ascending=[False, False])
+            .drop_duplicates(["target_side", "market_context", "entry_family"])
+            .reset_index(drop=True)
+        )
+        for (side, context), group_rules in selected.groupby(
+            ["target_side", "market_context"], sort=False
+        ):
+            group_mask = (
+                result["target_side"].eq(side).to_numpy()
+                & result["market_context"].eq(context).to_numpy()
             )
-            comparison = value <= rule.threshold if rule.operator == "<=" else value > rule.threshold
-            predicts_now = applicable & comparison
-            predicts_wait = applicable & ~comparison
-            weight = max(float(rule.balanced_accuracy) - 0.5, np.finfo(float).eps)
-            now_score[predicts_now] += weight
-            wait_score[predicts_wait] += weight
-            supporting[predicts_now] += 1
-            counterexamples[predicts_wait] += 1
+            if not group_mask.any():
+                continue
+            first = group_rules.iloc[0]
+            group_now = float(first["now_support"])
+            group_wait = float(first["wait_support"])
+            prior = np.log((group_now + 0.5) / (group_wait + 0.5))
+            log_odds[group_mask] = prior
+            if prior < 0:
+                wait_score[group_mask] += -prior
+            else:
+                now_score[group_mask] += prior
+
+            for rule in group_rules.itertuples(index=False):
+                if rule.feature not in result.columns:
+                    raise TwinContractError(
+                        f"threshold_frontier: missing learned feature {rule.feature}"
+                    )
+                value = pd.to_numeric(result[rule.feature], errors="coerce").to_numpy(dtype=float)
+                applicable = group_mask & np.isfinite(value)
+                comparison = (
+                    value <= rule.threshold if rule.operator == "<=" else value > rule.threshold
+                )
+                sensitivity = (float(rule.true_now_support) + 0.5) / (
+                    float(rule.now_support) + 1.0
+                )
+                false_positive = (float(rule.true_wait_support) + 0.5) / (
+                    float(rule.wait_support) + 1.0
+                )
+                true_lr = np.log(sensitivity / false_positive)
+                false_lr = np.log((1.0 - sensitivity) / (1.0 - false_positive))
+                contribution = np.where(comparison, true_lr, false_lr)
+                log_odds[applicable] += contribution[applicable]
+                now_score[applicable] += np.maximum(contribution[applicable], 0.0)
+                wait_score[applicable] += np.maximum(-contribution[applicable], 0.0)
+                retrieved[applicable] += 1
+                supporting[applicable & (contribution > 0)] += 1
+                counterexamples[applicable & (contribution <= 0)] += 1
 
     result["now_evidence"] = now_score
     result["wait_evidence"] = wait_score
+    result["historical_log_odds"] = log_odds
+    result["historical_now_probability"] = 1.0 / (1.0 + np.exp(-np.clip(log_odds, -700, 700)))
+    result["retrieved_rule_count"] = retrieved
     result["supporting_rule_count"] = supporting
     result["counterexample_rule_count"] = counterexamples
-    result["relative_decision"] = np.where(now_score > wait_score, "NOW", "WAIT")
+    result["relative_decision"] = np.where((retrieved > 0) & (log_odds > 0), "NOW", "WAIT")
     result["desired_position"] = _desired_position(result["target_side"])
     if result["desired_position"].isna().any():
         raise TwinContractError("threshold_frontier: target_side must be L or H")
@@ -117,8 +156,9 @@ def compute_threshold_frontier(
     result["stage_3_anchor_selection"] = "previous_wave|current_candidate|previous_candidate"
     result["stage_4_relative_measurement"] = "time|move|speed|rebound"
     result["stage_5_sequence_divergence"] = "candidate|candle|volume|8tf_macd"
-    result["stage_6_historical_retrieval"] = supporting + counterexamples
+    result["stage_6_historical_retrieval"] = retrieved
     result["stage_7_counterexample_check"] = counterexamples
     result["stage_8_fixed_action"] = result["runtime_action"]
     result["stage_9_position_transition"] = result["position_transition"]
     return result
+
