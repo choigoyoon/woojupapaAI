@@ -26,6 +26,11 @@ the learned boundary.
 
 `REARM` is also retained as an event flag, so a new extreme and `NOW` may occur
 on the same closed candle.  A same-direction `NOW` intent becomes `HOLD`.
+Correlated features do not receive duplicate votes: the strongest historical
+relationship from each of the six evidence families contributes a likelihood
+ratio, starting from that context's observed `NOW`/`WAIT` base rate.
+Each numeric rule begins at the selective edge and expands only to the first
+historical `WAIT` counterexample; that observed entry point becomes its boundary.
 
 ## Sixteen modules
 
@@ -70,3 +75,4 @@ Run the contract tests with:
 ```powershell
 python -m unittest discover -s tests -p "test_twin_*.py" -v
 ```
+
