@@ -1,0 +1,11 @@
+{
+  "events": 4116,
+  "L": 2058,
+  "H": 2058,
+  "alternating": true,
+  "canonical": false,
+  "status": "INPUT_MISMATCH",
+  "shortfall": 20,
+  "training_allowed": false,
+  "canonical_training_status": "BLOCKED_OFFICIAL_4136_LEDGER_REQUIRED"
+}
