@@ -74,6 +74,65 @@ STAGE_HANDOFF_FIELDS = {
     "10": ("official_base_run", "official_context_run", "per_method_run", "per_method_wait_reason", "active_blocker_count", "ready_candidates"),
     "11": ("candidate_transition", "trade_action", "action_source", "entry_fill"),
 }
+STAGE_SCOPE_CONTRACTS = {
+    "03": {
+        "view_when": "ACTIVE_SEEK_SIDE_CURRENT_CANDIDATE_ON_THE_LATEST_CLOSED_5M_BAR",
+        "exclude_when": [
+            "OTHER_SEEK_SIDE_CANDIDATE_PREFIX",
+            "CURRENT_EVENT_SELF_MATCH_DURING_STUDY_AUDIT",
+        ],
+    },
+    "04": {
+        "view_when": "STAGE03_HANDOFF_EQUALS_04; BOTH_REARM_AND_WAIT_CANDIDATES_CONTINUE",
+        "exclude_when": [],
+    },
+    "05": {
+        "view_when": "EVERY_CURRENT_CANDIDATE_HANDED_OFF_BY_STAGE04",
+        "exclude_when": [
+            "RELATION_TO_A_PRIOR_WAVE_THAT_DOES_NOT_EXIST; KEEP_MISSING_INSTEAD"
+        ],
+    },
+    "06": {
+        "view_when": "EVERY_CURRENT_CANDIDATE_ROW_HANDED_OFF_BY_STAGE05",
+        "exclude_when": [
+            "VOLUME_RELATION_WHEN_VOLUME_IS_UNAVAILABLE; KEEP_NULL_INSTEAD"
+        ],
+    },
+    "07": {
+        "view_when": "EVERY_STAGE06_HANDOFF_WITH_ALL_EIGHT_CAUSAL_TIMEFRAME_WITNESSES",
+        "exclude_when": [
+            "FUTURE_OR_STUDY_ONLY_TIMEFRAME_VALUE",
+            "TIMEFRAME_VOTE_OR_AGGREGATED_SINGLE_SCORE",
+        ],
+    },
+    "08": {
+        "view_when": "EVERY_STAGE07_HANDOFF_WITH_EIGHT_LAST_ZC_POSITIONS",
+        "exclude_when": [
+            "ANY_ORDER_CREATED_BY_BREAKING_SIMULTANEOUS_ZC_TIES",
+            "AGGREGATED_SEQUENCE_SCORE",
+        ],
+    },
+    "09": {
+        "view_when": "EVERY_STAGE08_HANDOFF_IN_ITS_EXACT_CURRENT_BACKGROUND",
+        "exclude_when": [
+            "DIRECT_MATCH_AGAINST_THE_2775_HISTORICAL_OUTPUT_ADDRESSES",
+            "CROSS_METHOD_AGGREGATION_OR_SINGLE_TOTAL_SCORE",
+        ],
+    },
+    "10": {
+        "view_when": "EVERY_STAGE09_BASE_AND_CONTEXT_CANDIDATE_WITH_ITS_CURRENT_RUN_STATE",
+        "exclude_when": [
+            "ANY_RELEASE_THAT_BYPASSES_THE_ORIGINAL_ELIGIBILITY_BLOCKERS"
+        ],
+    },
+    "11": {
+        "view_when": "CURRENT_STAGE10_RELEASE_STATE_AND_CURRENT_STAGE03_CANDIDATE_TRANSITION",
+        "exclude_when": [
+            "HISTORICAL_2775_OUTPUT_ADDRESS_AS_A_RUNTIME_SELECTOR",
+            "OFFICIAL_ACTION_POSITION_OR_OTHER_FUTURE_EVENT_FIELD",
+        ],
+    },
+}
 STAGE_EXECUTION_CONTRACTS = {
     "03": {
         "observation_start": "ram.current_candidate_extreme",
@@ -214,6 +273,31 @@ def _module_execution_program(
                 f"blueprint Stage {number} is not owned by {STAGE_MODULES[number]}"
             )
         fixed_action = "DYNAMIC_FINAL_GATE" if number == "11" else "WAIT"
+        source_decision = _clean_stage(decision_stages[number])
+        excluded = [
+            *STAGE_SCOPE_CONTRACTS[number]["exclude_when"],
+            *[
+                f"RUNTIME_FORBIDDEN::{field}"
+                for field in source_decision.get("runtime_forbidden_inputs", [])
+            ],
+        ]
+        handoff_target = supplied.get(
+            "handoff", source_decision.get("default_handoff", "EXECUTION")
+        )
+        five_part_contract = {
+            "view_when": STAGE_SCOPE_CONTRACTS[number]["view_when"],
+            "exclude_when": excluded,
+            "fixed_observations": deepcopy(
+                STAGE_EXECUTION_CONTRACTS[number]["fixed_observations"]
+            ),
+            "relative_comparisons": deepcopy(
+                STAGE_EXECUTION_CONTRACTS[number]["relative_calculations"]
+            ),
+            "handoff_to_next_stage": {
+                "target": handoff_target,
+                "values": list(STAGE_HANDOFF_FIELDS[number]),
+            },
+        }
         program.append(
             {
                 "stage": number,
@@ -231,11 +315,38 @@ def _module_execution_program(
                 "filters": deepcopy(STAGE_EXECUTION_CONTRACTS[number]["filters"]),
                 "fixed_action": fixed_action,
                 "handoff_fields": list(STAGE_HANDOFF_FIELDS[number]),
+                "five_part_contract": five_part_contract,
                 "source_blueprint_contract": supplied,
-                "source_decision_contract": _clean_stage(decision_stages[number]),
+                "source_decision_contract": source_decision,
             }
         )
     return program
+
+
+def _reverse_stage_program(
+    forward_program: list[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Trace the supplied handoffs backward without redefining the stages."""
+
+    by_stage = {str(item["stage"]): item for item in forward_program}
+    reverse: list[dict[str, Any]] = []
+    for number in reversed(STAGE_ORDER):
+        stage = by_stage[number]
+        reverse.append(
+            {
+                "stage": number,
+                "module": stage["module"],
+                "responsibility": stage["source_decision_contract"].get(
+                    "responsibility"
+                ),
+                "reverse_question": (
+                    "WHICH_UPSTREAM_HANDOFF_VALUES_PRODUCED_THIS_STAGE_OUTPUT"
+                ),
+                "five_part_contract": deepcopy(stage["five_part_contract"]),
+                "source_contract_preserved": True,
+            }
+        )
+    return reverse
 
 
 def _feature_origin(feature: str) -> dict[str, str]:
@@ -487,6 +598,78 @@ def _all_runtime_calculations(
     return calculations, by_source_address, base_count, context_count
 
 
+def _calculation_operands(calculation: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    body = calculation["calculation"]
+    if calculation["output_source"] == "BASE":
+        return [body["operand"]]
+    return [condition["operand"] for condition in body.get("conditions", [])]
+
+
+def _reverse_dependency_trace(
+    source_address: str, calculation: Mapping[str, Any]
+) -> dict[str, Any]:
+    operands = _calculation_operands(calculation)
+    features_by_stage: dict[str, list[str]] = {number: [] for number in STAGE_ORDER}
+    for operand in operands:
+        origin_stage = str(operand["origin"]["stage"])
+        feature = str(operand["feature"])
+        if feature not in features_by_stage[origin_stage]:
+            features_by_stage[origin_stage].append(feature)
+    learned = calculation["output_value"]
+    return {
+        "reverse_order": list(reversed(STAGE_ORDER)),
+        "11": {
+            "status": "RECOVERED_FROM_2775_EVIDENCE_SET",
+            "historical_output_address": source_address,
+            "runtime_selector": False,
+        },
+        "10": {
+            "status": "RECOVERED_LEARNED_ELIGIBILITY_VALUES",
+            "state_probability": learned["state_probability"],
+            "event_support": learned["event_support"],
+            "minimum_persistence_bars": learned.get(
+                "minimum_persistence_bars", 1
+            ),
+            "minimum_persistence_bars_by_side": learned.get(
+                "minimum_persistence_bars_by_side", {}
+            ),
+            "case_level_run_and_blocker_state": "NOT_ENCODED_IN_THIS_2775_ADDRESS",
+        },
+        "09": {
+            "status": "RECOVERED_RELATION_REFERENCE",
+            "runtime_calculation_id": calculation["calculation_id"],
+            "output_source": calculation["output_source"],
+            "method": calculation["method"],
+            "background": calculation["background"],
+        },
+        "08": {
+            "status": "STAGE_CONTRACT_RECOVERED_CASE_HANDOFF_NOT_PACKAGED",
+            "features_referenced_by_selected_relation": features_by_stage["08"],
+        },
+        "07": {
+            "status": "RELATION_OPERANDS_RECOVERED",
+            "features_referenced_by_selected_relation": features_by_stage["07"],
+        },
+        "06": {
+            "status": "RELATION_OPERANDS_RECOVERED",
+            "features_referenced_by_selected_relation": features_by_stage["06"],
+        },
+        "05": {
+            "status": "RELATION_OPERANDS_RECOVERED",
+            "features_referenced_by_selected_relation": features_by_stage["05"],
+        },
+        "04": {
+            "status": "BACKGROUND_RECOVERED",
+            "context_background_name": calculation["background"],
+        },
+        "03": {
+            "status": "RELATION_OPERANDS_RECOVERED",
+            "features_referenced_by_selected_relation": features_by_stage["03"],
+            "case_level_candidate_handoff": "NOT_ENCODED_IN_THIS_2775_ADDRESS",
+        },
+    }
+
+
 def _historical_evidence(
     selected: list[str], by_source_address: Mapping[str, Mapping[str, Any]]
 ) -> list[dict[str, Any]]:
@@ -505,10 +688,57 @@ def _historical_evidence(
                 "runtime_calculation_id": calculation["calculation_id"],
                 "historical_output_address": source_address,
                 "historical_output_value": deepcopy(calculation["output_value"]),
+                "reverse_dependency_trace": _reverse_dependency_trace(
+                    source_address, calculation
+                ),
                 "role": "PAST_RELEASE_EVIDENCE_ONLY",
             }
         )
     return evidence
+
+
+def _evidence_breakdown(
+    evidence: list[Mapping[str, Any]],
+    by_source_address: Mapping[str, Mapping[str, Any]],
+) -> dict[str, dict[str, int]]:
+    result: dict[str, dict[str, int]] = {
+        "by_background": {},
+        "by_method": {},
+        "by_output_source": {},
+    }
+    for item in evidence:
+        calculation = by_source_address[item["historical_output_address"]]
+        for bucket, value in (
+            ("by_background", calculation["background"]),
+            ("by_method", calculation["method"]),
+            ("by_output_source", calculation["output_source"]),
+        ):
+            name = str(value)
+            result[bucket][name] = result[bucket].get(name, 0) + 1
+    return result
+
+
+def _referenced_intermediate_ledgers(
+    stages: Mapping[str, Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    references: list[dict[str, Any]] = []
+    for number in STAGE_ORDER:
+        source = stages[number].get("historical_pattern_source", {})
+        if not isinstance(source, Mapping) or "path" not in source:
+            continue
+        references.append(
+            {
+                "stage": number,
+                "path_recorded_by_source": source.get("path"),
+                "sha256_recorded_by_source": source.get("sha256"),
+                "bytes_recorded_by_source": source.get("bytes"),
+                "observation_count_recorded_by_source": source.get(
+                    "observation_count"
+                ),
+                "content_embedded_in_the_supplied_rule_json": False,
+            }
+        )
+    return references
 
 
 def build_executable_artifact(
@@ -564,6 +794,7 @@ def build_executable_artifact(
 
     selector = deepcopy(source["selector"])
     module_program = _module_execution_program(stages, blueprint)
+    reverse_program = _reverse_stage_program(module_program)
     return {
         "schema": SCHEMA,
         "source": {
@@ -592,6 +823,29 @@ def build_executable_artifact(
             "single_total_score": None,
             "runtime_decision_dependency": "FULL_RELATION_MODEL_ONLY",
             "historical_evidence_dependency": False,
+        },
+        "reverse_reconstruction": {
+            "purpose": "RECOVER_EXISTING_THOUGHT_FROM_2775_EVIDENCE_OUTPUTS",
+            "learning_reconstruction_direction": list(reversed(STAGE_ORDER)),
+            "runtime_execution_direction": list(STAGE_ORDER),
+            "stage_responsibilities_redefined": False,
+            "new_conditions_or_values_added": False,
+            "historical_2775_role": "EVIDENCE_LEDGER_ONLY",
+            "historical_2775_count": len(evidence),
+            "historical_2775_breakdown": _evidence_breakdown(
+                evidence, by_source_address
+            ),
+            "reverse_stage_program": reverse_program,
+            "case_level_handoff_limit": {
+                "status": "SOURCE_INTERMEDIATE_LEDGER_REQUIRED_FOR_EXACT_PER_CASE_TRACE",
+                "meaning": (
+                    "The supplied rule JSON preserves stage contracts, aggregate audits, "
+                    "2775 selected output addresses and learned values, but does not embed "
+                    "the per-observation intermediate ledgers referenced by each stage."
+                ),
+                "referenced_ledgers": _referenced_intermediate_ledgers(stages),
+                "guessing_allowed": False,
+            },
         },
         "existing_selector_values": {
             "action_gate": selector["action_gate"],
