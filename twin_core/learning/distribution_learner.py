@@ -101,9 +101,10 @@ def run_learning_pipeline(
                 },
                 output_dir,
             )
-    status.finish()
+    mode = "FULL_LEARNING" if contract["canonical"] else "NONCANONICAL_DIAGNOSTIC"
+    status.finish("COMPLETE" if contract["canonical"] else "DIAGNOSTIC_COMPLETE")
     return {
-        "mode": "FULL_LEARNING",
+        "mode": mode,
         "events": events,
         "observations": observations,
         "rules": rules,
@@ -116,3 +117,4 @@ def run_learning_pipeline(
         "status": get_learning_status(status),
         "manifest": manifest,
     }
+
