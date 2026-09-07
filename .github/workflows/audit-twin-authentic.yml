@@ -1,0 +1,29 @@
+name: Audit authentic TWIN contract
+
+on:
+  push:
+    branches: [twin-authentic-stage03-11-v1]
+    paths:
+      - "twin_core/**"
+      - "tests/**"
+      - "scripts/audit_authentic_bundle.py"
+      - ".github/workflows/audit-twin-authentic.yml"
+  pull_request:
+    paths:
+      - "twin_core/**"
+      - "tests/**"
+      - "scripts/audit_authentic_bundle.py"
+
+jobs:
+  public-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -r twin_core/requirements.txt
+      - run: python -m unittest discover -s tests -v
+
+      # The private 2,775-rule package and official event ledger are never
+      # uploaded to this public repository. Full hash/parity tests run locally.
