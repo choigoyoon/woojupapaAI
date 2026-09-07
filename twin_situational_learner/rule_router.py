@@ -462,6 +462,16 @@ def _output_rank(output: Mapping[str, Any]) -> tuple[Any, ...]:
     )
 
 
+def _verdict_for_reason(reason: str) -> str:
+    if reason == "READY":
+        return "KEEP"
+    if reason == "PERSISTENCE_INCOMPLETE":
+        return "WAIT"
+    if reason in {"SUPPORT_BELOW_MINIMUM", "PROBABILITY_BELOW_GATE"}:
+        return "EXCLUDE"
+    return "NOT_APPLICABLE"
+
+
 class RuleRouter:
     def __init__(self, program: Mapping[str, Any]):
         self.program = dict(program)
@@ -547,6 +557,21 @@ class RuleRouter:
             raise RouterContractError("runtime calculations are missing or duplicated")
         if self.program["calculation_program"].get("historical_evidence_dependency"):
             raise RouterContractError("historical evidence cannot select a runtime action")
+        signal_contract = self.program.get("signal_environment_contract", {})
+        if signal_contract.get("context_is_independent_entry_signal") is not False:
+            raise RouterContractError("context must be the signal plus its environment")
+        context_relations = [
+            item for item in calculations if item["output_source"] == "CONTEXT"
+        ]
+        if any(
+            not item.get("contains_own_family_signal")
+            or item.get("environment_only_signal") is not False
+            or item.get("raw_match_is_entry") is not False
+            for item in context_relations
+        ):
+            raise RouterContractError(
+                "a context relation was exported as environment-only or direct entry"
+            )
 
     def _begin_event(self, event_key: str) -> None:
         if self.current_event_key != event_key:
@@ -988,6 +1013,11 @@ class RuleRouter:
             method_views[method] = {
                 "base": min(base, key=_output_rank) if base else None,
                 "context": min(context, key=_output_rank) if context else None,
+                "signal_claim": min(base, key=_output_rank) if base else None,
+                "contextualized_signal_claim": (
+                    min(context, key=_output_rank) if context else None
+                ),
+                "context_is_independent_entry_signal": False,
             }
         base_matches = [
             calculation
@@ -1013,6 +1043,11 @@ class RuleRouter:
                 "context": min(context_matches, key=_output_rank)
                 if context_matches
                 else None,
+            },
+            "claim_semantics": {
+                "base": "SIGNAL_FORMULA_CLAIM_IN_CURRENT_BACKGROUND",
+                "context": "SAME_METHOD_SIGNAL_PLUS_RELATIVE_ENVIRONMENT",
+                "raw_match_is_trade_action": False,
             },
             "methods": method_views,
             "historical_2775_evidence_consulted": False,
@@ -1055,6 +1090,10 @@ class RuleRouter:
                     "ready": False,
                     "run": 0,
                     "reason": "NO_RELATION_SATISFIED",
+                    "verdict": "NOT_APPLICABLE",
+                    "relation_satisfied": False,
+                    "environment_support_state": "NOT_EVALUATED",
+                    "persistence_state": "NOT_EVALUATED",
                 }
             value = output["output_value"]
             minimum_support = int(
@@ -1083,6 +1122,20 @@ class RuleRouter:
                 "required": required,
                 "ready": reason == "READY",
                 "reason": reason,
+                "verdict": _verdict_for_reason(reason),
+                "relation_satisfied": True,
+                "environment_support_state": (
+                    "BLOCKED"
+                    if reason in {"SUPPORT_BELOW_MINIMUM", "PROBABILITY_BELOW_GATE"}
+                    else "SUPPORTED"
+                ),
+                "persistence_state": (
+                    "WAIT"
+                    if reason == "PERSISTENCE_INCOMPLETE"
+                    else "COMPLETE"
+                    if reason == "READY"
+                    else "NOT_REACHED"
+                ),
             }
 
         official_candidates = stage09["official_single_winner_candidates"]
@@ -1110,10 +1163,37 @@ class RuleRouter:
                 view["context"], run_key=f"{method}::CONTEXT"
             )
             method_ready = bool(base["ready"] or context["ready"])
+            verdicts = (base["verdict"], context["verdict"])
+            if "KEEP" in verdicts:
+                method_verdict = "KEEP"
+            elif "WAIT" in verdicts:
+                method_verdict = "WAIT"
+            elif "EXCLUDE" in verdicts:
+                method_verdict = "EXCLUDE"
+            else:
+                method_verdict = "NOT_APPLICABLE"
             method_states[method] = {
                 "base": base,
                 "context": context,
                 "ready": method_ready,
+                "verdict": method_verdict,
+                "arguments": {
+                    "support": [
+                        source
+                        for source, state in (("BASE", base), ("CONTEXT", context))
+                        if state["verdict"] == "KEEP"
+                    ],
+                    "counterargument": [
+                        source
+                        for source, state in (("BASE", base), ("CONTEXT", context))
+                        if state["verdict"] == "EXCLUDE"
+                    ],
+                    "unresolved": [
+                        source
+                        for source, state in (("BASE", base), ("CONTEXT", context))
+                        if state["verdict"] == "WAIT"
+                    ],
+                },
                 "wait_reason": "METHOD_READY"
                 if method_ready
                 else f"BASE:{base['reason']}|CONTEXT:{context['reason']}",
@@ -1128,9 +1208,33 @@ class RuleRouter:
             ),
             "ready_output_count": len(ready),
             "ready_outputs": ready,
+            "keep_outputs": ready,
             "released": bool(ready),
             "active_blocker_count": 0 if ready else 1,
             "persistence_reset_reasons": list(evidence_reset_reasons),
+            "judgment_lenses": {
+                "relation": {
+                    "satisfied_path_count": sum(
+                        int(state[source]["relation_satisfied"])
+                        for state in method_states.values()
+                        for source in ("base", "context")
+                    )
+                },
+                "environment": {
+                    "excluded_path_count": sum(
+                        int(state[source]["verdict"] == "EXCLUDE")
+                        for state in method_states.values()
+                        for source in ("base", "context")
+                    )
+                },
+                "persistence": {
+                    "waiting_path_count": sum(
+                        int(state[source]["verdict"] == "WAIT")
+                        for state in method_states.values()
+                        for source in ("base", "context")
+                    )
+                },
+            },
             "trade_action": "WAIT",
             "handoff": "11",
         }
@@ -1156,7 +1260,7 @@ class RuleRouter:
         stage10: Mapping[str, Any],
         observed_1h_zc_switch: bool,
     ) -> dict[str, Any]:
-        ready = list(stage10["ready_outputs"])
+        ready = list(stage10["keep_outputs"])
         winner = min(ready, key=_output_rank) if ready else None
         if not self.event_released and winner is not None:
             action = "NOW"
@@ -1293,6 +1397,13 @@ def _candidate_state_arrays(
     reason[enough_probability & (run < required)] = "PERSISTENCE_INCOMPLETE"
     ready = enough_probability & (run >= required)
     reason[ready] = "READY"
+    verdict = np.full(len(calculation_indexes), "NOT_APPLICABLE", dtype=object)
+    verdict[
+        valid
+        & np.isin(reason, ("SUPPORT_BELOW_MINIMUM", "PROBABILITY_BELOW_GATE"))
+    ] = "EXCLUDE"
+    verdict[reason == "PERSISTENCE_INCOMPLETE"] = "WAIT"
+    verdict[ready] = "KEEP"
     probability[~valid] = np.nan
     support[~valid] = 0
     required[~valid] = 0
@@ -1303,6 +1414,8 @@ def _candidate_state_arrays(
         "run": run.astype(np.int32),
         "ready": ready,
         "reason": reason,
+        "verdict": verdict,
+        "relation_satisfied": valid,
     }
 
 
@@ -1412,6 +1525,7 @@ def build_reconstructed_intermediate_ledger(
             ledger[f"stage10_{key.lower()}_required"] = state["required"]
             ledger[f"stage10_{key.lower()}_reason"] = state["reason"]
             ledger[f"stage10_{key.lower()}_ready"] = state["ready"]
+            ledger[f"stage10_{key.lower()}_verdict"] = state["verdict"]
 
     method_ready_arrays: dict[str, np.ndarray] = {}
     for method in METHODS:
@@ -1420,6 +1534,16 @@ def build_reconstructed_intermediate_ledger(
         method_ready = base["ready"] | context["ready"]
         method_ready_arrays[method] = method_ready
         ledger[f"stage10_{method.lower()}_ready"] = method_ready
+        ledger[f"stage10_{method.lower()}_verdict"] = np.select(
+            [
+                (base["verdict"] == "KEEP") | (context["verdict"] == "KEEP"),
+                (base["verdict"] == "WAIT") | (context["verdict"] == "WAIT"),
+                (base["verdict"] == "EXCLUDE")
+                | (context["verdict"] == "EXCLUDE"),
+            ],
+            ["KEEP", "WAIT", "EXCLUDE"],
+            default="NOT_APPLICABLE",
+        )
         ledger[f"stage10_{method.lower()}_wait_reason"] = np.where(
             method_ready,
             "METHOD_READY",
@@ -1489,6 +1613,15 @@ def build_reconstructed_intermediate_ledger(
     ledger["stage11_event_released"] = released_so_far
     events = pd.DataFrame.from_records(event_actions)
     action_counts = events["action_source"].value_counts()
+    method_verdict_counts = {
+        method: {
+            str(verdict): int(count)
+            for verdict, count in ledger[
+                f"stage10_{method.lower()}_verdict"
+            ].value_counts().items()
+        }
+        for method in METHODS
+    }
     summary = {
         "status": "RECONSTRUCTED_FROM_AVAILABLE_FORMULAS",
         "rows": int(len(ledger)),
@@ -1501,6 +1634,13 @@ def build_reconstructed_intermediate_ledger(
         "too_fast_relative_to_study_pivot": int((events["distance_bars"] < 0).sum()),
         "historical_2775_evidence_consulted": False,
         "original_missing_intermediate_hash_claimed": False,
+        "signal_environment_semantics": {
+            "raw_formula_match_is_action": False,
+            "context_is_independent_signal": False,
+            "context_contains_same_method_signal": True,
+            "only_keep_reaches_stage11": True,
+            "method_verdict_counts": method_verdict_counts,
+        },
     }
     source_audit = router.program.get("historical_learning_evidence", {}).get(
         "source_thought_audit", {}

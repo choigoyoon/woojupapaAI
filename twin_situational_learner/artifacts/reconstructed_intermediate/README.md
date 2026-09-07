@@ -15,6 +15,22 @@ The historical 2,775 selected outputs are not consulted while calculating this
 ledger. They remain audit evidence, not a runtime whitelist. The files also do
 not claim to match the unavailable hashes of the original intermediate ledgers.
 
+The ledger now records the signal/environment distinction explicitly.  A BASE
+interval match is a formula claim inside the current macro background, not an
+entry by itself.  Every one of the 5,500 CONTEXT relations was verified to
+contain at least one condition owned by its own trading method, so CONTEXT is a
+contextualized version of that method's signal (signal formula plus relative
+environment), not an independent environment-only trigger.  Stage 10 records
+`EXCLUDE`, `WAIT`, `KEEP`, or `NOT_APPLICABLE` for every BASE and CONTEXT path;
+only `KEEP` is eligible to reach Stage 11.
+
+These verdict names do not add a formula, threshold, score, or method.  They
+make the existing support/probability and persistence blockers observable:
+support/probability failure is `EXCLUDE`, unfinished persistence is `WAIT`, and
+all blockers clear is `KEEP`.  The six methods retain their individual support,
+counterargument, and unresolved paths, while the existing official winner path
+continues to control the final action.
+
 The executable JSON also preserves 3,972 historical Stage 10-to-11 release
 batons.  They contain the six methods' READY or WAIT reasons and are likewise
 validation evidence only.  Reversing those batons corrected two observation

@@ -8,7 +8,7 @@
   },
   "source_program": {
     "file": "twin_executable_thought_program_v3.json",
-    "sha256": "7682410b9a1f7078295622d4bcf1c455381f0bd8e775986ecd7a9d69fadd07ba"
+    "sha256": "eb0d9baac71470cce6d287e83c27a686179cf3b7a7b0bc15d8784113c3417052"
   },
   "runtime_uses_historical_2775_evidence": false,
   "stage_order": [
@@ -43,6 +43,44 @@
     "too_fast_relative_to_study_pivot": 2,
     "historical_2775_evidence_consulted": false,
     "original_missing_intermediate_hash_claimed": false,
+    "signal_environment_semantics": {
+      "raw_formula_match_is_action": false,
+      "context_is_independent_signal": false,
+      "context_contains_same_method_signal": true,
+      "only_keep_reaches_stage11": true,
+      "method_verdict_counts": {
+        "WAVE_REARM_AGE": {
+          "WAIT": 563942,
+          "KEEP": 85879,
+          "EXCLUDE": 6315
+        },
+        "MOMENTUM_SPEED": {
+          "WAIT": 563707,
+          "KEEP": 81442,
+          "EXCLUDE": 10987
+        },
+        "CANDLE_REVERSAL": {
+          "WAIT": 440484,
+          "KEEP": 189381,
+          "EXCLUDE": 26271
+        },
+        "VOLUME_RANGE": {
+          "WAIT": 417229,
+          "KEEP": 232760,
+          "EXCLUDE": 6147
+        },
+        "MACRO_TREND": {
+          "KEEP": 329098,
+          "WAIT": 321468,
+          "EXCLUDE": 5570
+        },
+        "MID_MACD_TREND": {
+          "WAIT": 605847,
+          "KEEP": 47594,
+          "EXCLUDE": 2695
+        }
+      }
+    },
     "source_aggregate_parity": {
       "status": "MISMATCH",
       "source": {
@@ -93,9 +131,9 @@
     {
       "file": "professor_16_modules_intermediate_ledger_reconstructed_v1.parquet",
       "rows": 656136,
-      "columns": 174,
-      "bytes": 98134077,
-      "sha256": "788b2b6876b15d64fd43105b59818f31bb6b6e79266a0f40304ba3a74be61332"
+      "columns": 194,
+      "bytes": 99521990,
+      "sha256": "5d16e19a783a7920bb94bfb97cd0a7c9ffc9e27ed92450d30cbf82e0ad7e02e5"
     },
     {
       "file": "stage11_event_actions_reconstructed_v1.parquet",

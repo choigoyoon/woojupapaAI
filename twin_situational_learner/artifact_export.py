@@ -70,8 +70,8 @@ STAGE_HANDOFF_FIELDS = {
     "06": ("candle_direction_for_side", "candle_body_ratio", "upper_wick_ratio", "lower_wick_ratio", "close_position_for_side", "volume_ratio20", "volume_ratio72", "range_ratio20"),
     "07": ("eight_timeframe_macd_witnesses",),
     "08": ("last_zc_raw_positions", "distinct_last_zc_position_count", "signal_order_sequence"),
-    "09": ("official_base_candidate", "official_context_candidate", "six_method_base_candidates", "six_method_context_candidates"),
-    "10": ("official_base_run", "official_context_run", "per_method_run", "per_method_wait_reason", "active_blocker_count", "ready_candidates"),
+    "09": ("official_base_candidate", "official_context_candidate", "six_method_signal_claims", "six_method_contextualized_claims"),
+    "10": ("official_base_run", "official_context_run", "per_method_verdict", "per_method_arguments", "active_blocker_count", "keep_candidates"),
     "11": ("candidate_transition", "trade_action", "action_source", "entry_fill"),
 }
 STAGE_SCOPE_CONTRACTS = {
@@ -204,21 +204,22 @@ STAGE_EXECUTION_CONTRACTS = {
         "observation_start": "stage03_to_stage08_handoffs",
         "fixed_observations": ["canonical_64_features", "three_background_rulebooks", "six_method_ownership", "official_single_winner_path"],
         "relative_calculations": [
-            {"output": "official_base_candidate", "operator": "SINGLE_STRONGEST_SATISFIED_BASE", "formula": "rank every satisfied base interval in the current background"},
-            {"output": "official_context_candidate", "operator": "SINGLE_STRONGEST_SATISFIED_CONTEXT", "formula": "rank every context relation whose current/prior comparisons are all true"},
-            {"output": "six_method_views", "operator": "PRESERVE_PARALLEL_METHOD_EXPLANATIONS", "formula": "calculate strongest BASE and CONTEXT inside each method without aggregating them into the action path"},
+            {"output": "base_signal_claim", "operator": "SINGLE_STRONGEST_SATISFIED_BASE", "formula": "rank every satisfied signal interval inside the current background; a raw match is a claim, never an action"},
+            {"output": "contextualized_signal_claim", "operator": "SINGLE_STRONGEST_SATISFIED_CONTEXT", "formula": "rank every relation that contains the same method's signal condition plus its current/prior relative environment conditions"},
+            {"output": "six_method_dialogue", "operator": "PRESERVE_PARALLEL_METHOD_EXPLANATIONS", "formula": "preserve each method's signal claim, contextualized claim, support, counterargument and unresolved persistence without a total score"},
         ],
-        "filters": ["OFFICIAL_SINGLE_WINNER_PATH_FOR_RELEASE", "PARALLEL_METHODS_EXPLANATION_ONLY", "NO_CROSS_METHOD_AGGREGATION", "NO_SINGLE_TOTAL_SCORE", "NO_TRADE_ACTION"],
+        "filters": ["RAW_FORMULA_MATCH_IS_NOT_AN_ACTION", "CONTEXT_IS_SIGNAL_PLUS_ENVIRONMENT_NOT_AN_INDEPENDENT_SIGNAL", "OFFICIAL_SINGLE_WINNER_PATH_FOR_RELEASE", "NO_CROSS_METHOD_AGGREGATION", "NO_SINGLE_TOTAL_SCORE", "NO_TRADE_ACTION"],
     },
     "10": {
         "observation_start": "stage09_method_candidates",
         "fixed_observations": ["action_gate", "probability_tolerance", "minimum_support", "learned_required_persistence"],
         "relative_calculations": [
             {"output": "run_length", "operator": "CONSECUTIVE_SAME_RELATION", "formula": "reset when relation signature changes"},
-            {"output": "official_source_ready", "operator": "ALL_BLOCKERS_CLEARED", "formula": "support >= minimum and probability + tolerance >= gate and run >= required"},
-            {"output": "release", "operator": "OFFICIAL_BASE_OR_CONTEXT_READY", "formula": "official_base_ready or official_context_ready"},
+            {"output": "path_verdict", "operator": "SUPPORT_COUNTERARGUMENT_PERSISTENCE", "formula": "EXCLUDE when probability/support blocks; WAIT when a qualified relation has not persisted; KEEP when every existing blocker clears"},
+            {"output": "official_source_ready", "operator": "ALL_BLOCKERS_CLEARED", "formula": "relation satisfied and support >= minimum and probability + tolerance >= gate and run >= required"},
+            {"output": "release", "operator": "ANY_QUALIFIED_CURRENT_RELATION", "formula": "release only a KEEP verdict; neither a raw BASE match nor environment alone can release"},
         ],
-        "filters": ["ONE_ORIGINAL_ELIGIBILITY_GATE", "PARALLEL_METHODS_DO_NOT_RELEASE", "WAIT_WHILE_THE_OFFICIAL_GATE_IS_BLOCKED"],
+        "filters": ["ONE_ORIGINAL_ELIGIBILITY_GATE", "RAW_MATCH_CANNOT_BYPASS_ENVIRONMENT_OR_PERSISTENCE", "PARALLEL_METHODS_DO_NOT_RELEASE", "WAIT_WHILE_THE_OFFICIAL_GATE_IS_BLOCKED"],
     },
     "11": {
         "observation_start": "stage10_ready_candidates",
@@ -497,6 +498,8 @@ def _compile_base(calculation_id: str, source_address: str, record: Mapping[str,
         "output_source": "BASE",
         "method": method,
         "calculation_path": "BASE",
+        "semantic_role": "SIGNAL_FORMULA_CLAIM_INSIDE_CURRENT_BACKGROUND",
+        "raw_match_is_entry": False,
         "calculation_group": f"{method}::BASE",
         "calculation_link": {
             "origin": _feature_origin(feature),
@@ -526,6 +529,17 @@ def _compile_base(calculation_id: str, source_address: str, record: Mapping[str,
 def _compile_context(calculation_id: str, source_address: str, record: Mapping[str, Any]) -> dict[str, Any]:
     item = record["item"]
     family = str(record["family"])
+    conditions = list(item.get("conditions", []))
+    contains_own_family_signal = any(
+        _base_feature_method(str(condition["feature"]).split("::", 1)[-1])
+        == family
+        for condition in conditions
+    )
+    if not contains_own_family_signal:
+        raise ExportContractError(
+            f"context relation has environment but no {family} signal condition: "
+            f"{source_address}"
+        )
     return {
         "calculation_id": calculation_id,
         "source_calculation_address": source_address,
@@ -533,6 +547,10 @@ def _compile_context(calculation_id: str, source_address: str, record: Mapping[s
         "output_source": "CONTEXT",
         "method": family,
         "calculation_path": "CONTEXT",
+        "semantic_role": "SAME_METHOD_SIGNAL_FORMULA_WITH_RELATIVE_ENVIRONMENT",
+        "contains_own_family_signal": contains_own_family_signal,
+        "environment_only_signal": False,
+        "raw_match_is_entry": False,
         "calculation_group": f"{family}::CONTEXT",
         "calculation_link": {
             "origins": sorted(
@@ -548,7 +566,7 @@ def _compile_context(calculation_id: str, source_address: str, record: Mapping[s
         },
         "calculation": {
             "operator": "ALL_CONDITIONS_TRUE",
-            "conditions": [_condition(condition) for condition in item.get("conditions", [])],
+            "conditions": [_condition(condition) for condition in conditions],
         },
         "output_value": {
             "entry_family": family,
@@ -901,6 +919,40 @@ def build_executable_artifact(
             "runtime_decision_dependency": "FULL_RELATION_MODEL_ONLY",
             "historical_evidence_dependency": False,
         },
+        "signal_environment_contract": {
+            "purpose": "SEPARATE_RAW_SIGNAL_CLAIM_FROM_KEEP_EXCLUDE_WAIT_JUDGMENT",
+            "base_role": (
+                "A same-method formula claim evaluated inside the current Stage 04 "
+                "background; a raw interval match never enters by itself"
+            ),
+            "context_role": (
+                "A contextualized version of the same method's signal formula; every "
+                "context relation also contains at least one condition owned by that method"
+            ),
+            "context_is_independent_entry_signal": False,
+            "three_judgment_lenses": [
+                {
+                    "lens": "RELATION",
+                    "question": "Did the current signal formula and its required relative relations match?",
+                },
+                {
+                    "lens": "ENVIRONMENT",
+                    "question": "Does historical survivor/replaced evidence support this relation in the current background?",
+                },
+                {
+                    "lens": "PERSISTENCE",
+                    "question": "Has the same qualified relation outlived the learned false-candidate run?",
+                },
+            ],
+            "verdicts": {
+                "KEEP": "Every existing blocker cleared; the claim may reach Stage 11",
+                "WAIT": "The relation is relevant but required persistence is incomplete",
+                "EXCLUDE": "Support or probability evidence rejects this thought path",
+                "NOT_APPLICABLE": "No current relation belongs to this thought path",
+            },
+            "final_action_rule": "ONLY_KEEP_CAN_REACH_STAGE11_NOW",
+            "new_formula_or_threshold_added": False,
+        },
         "reverse_reconstruction": {
             "purpose": "RECOVER_EXISTING_THOUGHT_FROM_2775_EVIDENCE_OUTPUTS",
             "learning_reconstruction_direction": list(reversed(STAGE_ORDER)),
@@ -940,6 +992,8 @@ def build_executable_artifact(
             "context_relation_calculations": context_count,
             "lookup_policy": "CALCULATE_CURRENT_RELATIONS_ACROSS_FULL_MODEL",
             "selected_historical_output_filter_used": False,
+            "context_relations_containing_own_family_signal": context_count,
+            "environment_only_context_relations": 0,
         },
         "runtime_calculations": calculations,
         "historical_learning_evidence": {
