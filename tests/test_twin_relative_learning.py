@@ -10,7 +10,8 @@ from twin_core import FORBIDDEN_RUNTIME_FIELDS, RUNTIME_ACTIONS, TwinContractErr
 from twin_core.learning import CANONICAL_MODULES
 from twin_core.learning.distribution_learner import run_learning_pipeline
 from twin_core.learning.rule_induction import fit_independent_evidence
-from twin_core.learning.threshold_frontier import THINKING_STAGES
+from twin_core.learning.multitf_zc_distribution import compute_all_8tf_zc_distributions
+from twin_core.learning.threshold_frontier import THINKING_STAGES, compute_threshold_frontier
 
 
 ENTRY_POINTS = {
@@ -119,6 +120,54 @@ class RelativeLearningContractTest(unittest.TestCase):
         )
         self.assertTrue((executions["decision_uses_future"] == False).all())  # noqa: E712
 
+    def test_same_direction_is_hold_and_rearm_can_coexist_with_now(self):
+        observations = pd.DataFrame(
+            {
+                "case_id": [1],
+                "step_id": [5],
+                "target_side": ["L"],
+                "market_context": ["MIXED"],
+                "rearm_event": [True],
+                "relative_move": [2.0],
+                "current_position": ["LONG"],
+            }
+        )
+        rules = pd.DataFrame(
+            {
+                "rule_id": ["r1"],
+                "target_side": ["L"],
+                "market_context": ["MIXED"],
+                "entry_family": ["RELATIVE_PATH"],
+                "feature": ["relative_move"],
+                "operator": [">"],
+                "threshold": [1.0],
+                "balanced_accuracy": [1.0],
+                "now_support": [2],
+                "wait_support": [2],
+                "true_now_support": [2],
+                "true_wait_support": [0],
+                "source_rows": [4],
+                "boundary_source": ["observed_fixed_action_frontier"],
+            }
+        )
+        result = compute_threshold_frontier(observations, rules)
+        self.assertEqual(result.at[0, "runtime_action"], "HOLD")
+        self.assertTrue(bool(result.at[0, "rearm_and_now"]))
+
+    def test_multitimeframe_features_are_prefix_causal(self):
+        bars, _ = synthetic_market()
+        prefix = bars.assign(
+            global_idx=np.arange(len(bars)),
+            target_side=np.where(np.arange(len(bars)) % 2, "L", "H"),
+        )
+        first = compute_all_8tf_zc_distributions(prefix)
+        changed = prefix.copy()
+        changed.loc[120:, "close"] *= 3.0
+        second = compute_all_8tf_zc_distributions(changed)
+        columns = [column for column in first if column.startswith("macd_")]
+        pd.testing.assert_frame_equal(first.loc[:119, columns], second.loc[:119, columns])
+
 
 if __name__ == "__main__":
     unittest.main()
+
