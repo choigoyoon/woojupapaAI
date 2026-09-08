@@ -50,14 +50,28 @@ jobs:
           path = Path('/tmp/merge_supabase_current.py')
           lines = path.read_text(encoding='utf-8').splitlines()
           changed = 0
-          for index, line in enumerate(lines):
-              if 'raise RuntimeError' in line and 'graph fetch errors' in line:
-                  indent = line[:len(line) - len(line.lstrip())]
-                  lines[index] = indent + 'print(f"WARNING: {len(errors)} graph fetch errors were recorded; continuing with successful rows")'
+          runtime_lines = []
+          for i, line in enumerate(lines):
+              if 'raise RuntimeError' not in line:
+                  continue
+              runtime_lines.append((i + 1, line.strip()))
+              indent = len(line) - len(line.lstrip())
+              parent = ''
+              for j in range(i - 1, max(-1, i - 20), -1):
+                  previous = lines[j]
+                  if not previous.strip():
+                      continue
+                  previous_indent = len(previous) - len(previous.lstrip())
+                  if previous_indent < indent:
+                      parent = previous.strip()
+                      break
+              if parent.startswith('if ') and 'errors' in parent:
+                  prefix = line[:indent]
+                  lines[i] = prefix + 'print(f"WARNING: {len(errors)} graph fetch errors were recorded; continuing with successful rows")'
                   changed += 1
+          print({'runtime_error_lines': runtime_lines, 'patched': changed})
           if changed != 1:
-              nearby = [line for line in lines if 'graph fetch' in line]
-              raise RuntimeError(f'expected one graph error guard, changed={changed}, nearby={nearby!r}')
+              raise RuntimeError(f'expected one RuntimeError inside an errors guard, patched={changed}, lines={runtime_lines!r}')
           path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
           PY
           python -m py_compile /tmp/build_ai_db.py /tmp/merge_supabase_current.py
