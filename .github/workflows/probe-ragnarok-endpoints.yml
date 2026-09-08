@@ -15,14 +15,23 @@ jobs:
         run: |
           set +e
           BASE='https://lejxxzrjorfexgtvegjf.supabase.co/functions/v1'
+          curl -sS --max-time 30 "$BASE/ragnarok-hub" -o /tmp/hub.html
+          echo '===== HUB JS API ROUTES ====='
+          grep -oE "api=[A-Za-z0-9_-]+" /tmp/hub.html | sort -u || true
+          grep -nE "fetch\(|URLSearchParams|searchParams|api:" /tmp/hub.html | tail -120 || true
+          echo '===== ROUTE TESTS ====='
           for spec in \
-            'ragnarok-hub' \
-            'ragnarok-hub?action=status' \
-            'ragnarok-hub?api=status' \
-            'ragnarok-graph' \
-            'ragnarok-graph?api=status' \
-            'ragnarok-graph?api=search&q=%EC%B2%9C%EA%B3%B5&limit=2'; do
+            'ragnarok-hub?api=search&q=%EC%B2%9C%EA%B3%B5&type=item&limit=2' \
+            'ragnarok-hub?api=search&q=&type=item&limit=2' \
+            'ragnarok-hub?api=database&type=item&q=%EC%B2%9C%EA%B3%B5&limit=2' \
+            'ragnarok-hub?api=entity&type=item&id=590116' \
+            'ragnarok-hub?api=detail&type=item&id=590116' \
+            'ragnarok-hub?api=official-market&limit=3' \
+            'ragnarok-hub?api=live&limit=3' \
+            'ragnarok-graph?api=search&q=1&type=item&limit=100' \
+            'ragnarok-graph?api=search&q=a&type=item&limit=100' \
+            'ragnarok-graph?api=graph&type=item&id=590116&depth=1&limit=20'; do
             echo "===== $spec ====="
-            curl -sS --max-time 20 -w '\nHTTP=%{http_code}\n' "$BASE/$spec" | head -c 12000
+            curl -sS --max-time 30 -w '\nHTTP=%{http_code}\n' "$BASE/$spec" | head -c 18000
             echo
           done
