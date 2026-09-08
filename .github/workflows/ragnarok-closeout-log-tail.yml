@@ -32,6 +32,7 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
+          find stage1 -type f -printf '%p %s bytes\n'
           base64 -d ragnarok-data-pipeline/merge_supabase_current.py.gz.b64 | gzip -d > /tmp/merge.py
           python - <<'PY'
           from pathlib import Path
@@ -64,13 +65,25 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           import importlib.util
+          import shutil
           import duckdb
           import zstandard as zstd
 
-          archive = next(Path('stage1').rglob('*.duckdb.zst'))
+          files = [p for p in Path('stage1').rglob('*') if p.is_file()]
+          if len(files) != 1:
+              raise RuntimeError(f'expected one stage1 file, found={files}')
+          archive = files[0]
           db = Path('/tmp/smoke.duckdb')
-          with archive.open('rb') as src, db.open('wb') as dst:
-              zstd.ZstdDecompressor().copy_stream(src, dst)
+          with archive.open('rb') as src:
+              magic = src.read(4)
+              src.seek(0)
+              if magic == b'\x28\xb5\x2f\xfd':
+                  with db.open('wb') as dst:
+                      zstd.ZstdDecompressor().copy_stream(src, dst)
+              else:
+                  with db.open('wb') as dst:
+                      shutil.copyfileobj(src, dst)
+          print({'stage1_file': str(archive), 'magic': magic.hex(), 'db_bytes': db.stat().st_size})
 
           spec = importlib.util.spec_from_file_location('merge', '/tmp/merge.py')
           mod = importlib.util.module_from_spec(spec)
