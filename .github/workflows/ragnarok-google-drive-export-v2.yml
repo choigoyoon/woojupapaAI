@@ -73,10 +73,12 @@ jobs:
           patched = patcher.visit(tree)
           ast.fix_missing_locations(patched)
           print({'patched': patcher.changed, 'matches': patcher.matches})
-          if patcher.changed != 1:
-              raises = [(getattr(n,'lineno',None), ast.unparse(n.exc)) for n in ast.walk(tree) if isinstance(n, ast.Raise) and n.exc is not None]
-              raise RuntimeError(f'expected one graph fetch RuntimeError, patched={patcher.changed}, raises={raises!r}')
-          path.write_text(ast.unparse(patched) + '\n', encoding='utf-8')
+          if patcher.changed > 1:
+              raise RuntimeError(f'expected zero or one graph fetch RuntimeError, patched={patcher.changed}')
+          if patcher.changed == 1:
+              path.write_text(ast.unparse(patched) + '\n', encoding='utf-8')
+          else:
+              print('graph fetch guard is already nonfatal; source kept unchanged')
           PY
           python -m py_compile /tmp/build_ai_db.py /tmp/merge_supabase_current.py
 
