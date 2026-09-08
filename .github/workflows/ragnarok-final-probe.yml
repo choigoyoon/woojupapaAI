@@ -1,0 +1,56 @@
+name: Ragnarok Final Collection Probe
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/ragnarok-final-probe.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Probe live public endpoints
+        shell: bash
+        run: |
+          set -u
+          BASE='https://lejxxzrjorfexgtvegjf.supabase.co/functions/v1'
+          for fn in ragnarok-hub ragnarok-graph ragnarok-build-research-v2 ragnarok-portable-export; do
+            echo "===== FUNCTION $fn ====="
+            code=$(curl -sS -L --max-time 30 -o "/tmp/$fn.body" -w '%{http_code}' "$BASE/$fn" || true)
+            echo "HTTP=$code BYTES=$(wc -c < /tmp/$fn.body 2>/dev/null || echo 0)"
+            head -c 500 "/tmp/$fn.body" 2>/dev/null || true
+            echo
+          done
+
+          echo '===== HUB ROUTE LITERALS ====='
+          grep -oE "(api|dataset)[=:][[:space:]]*['\"][A-Za-z0-9_-]+['\"]|api=[A-Za-z0-9_-]+" /tmp/ragnarok-hub.body 2>/dev/null | sort -u || true
+          grep -oE "hub\(['\"][A-Za-z0-9_-]+['\"]|callApi\(['\"][A-Za-z0-9_-]+['\"]|apiCall\(['\"][A-Za-z0-9_-]+['\"]" /tmp/ragnarok-hub.body 2>/dev/null | sort -u || true
+
+          echo '===== API PROBES ====='
+          specs=(
+            'ragnarok-hub?api=stats'
+            'ragnarok-hub?api=summary'
+            'ragnarok-hub?api=coverage'
+            'ragnarok-hub?api=sources'
+            'ragnarok-hub?api=search&q=&type=item&limit=2'
+            'ragnarok-hub?api=search&q=&type=monster&limit=2'
+            'ragnarok-hub?api=search&q=&type=skill&limit=2'
+            'ragnarok-hub?api=search&q=&type=efst&limit=2'
+            'ragnarok-hub?api=live&limit=2'
+            'ragnarok-hub?api=market&limit=2'
+            'ragnarok-hub?api=official-market&limit=2'
+            'ragnarok-hub?api=official-updates&limit=2'
+            'ragnarok-graph?api=stats'
+            'ragnarok-graph?api=search&q=&type=item&limit=2'
+          )
+          for spec in "${specs[@]}"; do
+            echo "----- $spec -----"
+            curl -sS -L --max-time 40 -w '\nHTTP=%{http_code}\n' "$BASE/$spec" | head -c 12000
+            echo
+          done
