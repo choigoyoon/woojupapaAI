@@ -38,42 +38,12 @@ jobs:
       - name: Install database builders
         run: python -m pip install --upgrade duckdb pyarrow pandas pyyaml requests zstandard
 
-      - name: Restore and harden database builders
+      - name: Restore database builders
         shell: bash
         run: |
           set -euxo pipefail
           base64 -d ragnarok-data-pipeline/build_ai_db.py.gz.b64 | gzip -d > /tmp/build_ai_db.py
           base64 -d ragnarok-data-pipeline/merge_supabase_current.py.gz.b64 | gzip -d > /tmp/merge_supabase_current.py
-          python - <<'PY'
-          from pathlib import Path
-
-          path = Path('/tmp/merge_supabase_current.py')
-          lines = path.read_text(encoding='utf-8').splitlines()
-          changed = 0
-          runtime_lines = []
-          for i, line in enumerate(lines):
-              if 'raise RuntimeError' not in line:
-                  continue
-              runtime_lines.append((i + 1, line.strip()))
-              indent = len(line) - len(line.lstrip())
-              parent = ''
-              for j in range(i - 1, max(-1, i - 20), -1):
-                  previous = lines[j]
-                  if not previous.strip():
-                      continue
-                  previous_indent = len(previous) - len(previous.lstrip())
-                  if previous_indent < indent:
-                      parent = previous.strip()
-                      break
-              if parent.startswith('if ') and 'errors' in parent:
-                  prefix = line[:indent]
-                  lines[i] = prefix + 'print(f"WARNING: {len(errors)} graph fetch errors were recorded; continuing with successful rows")'
-                  changed += 1
-          print({'runtime_error_lines': runtime_lines, 'patched': changed})
-          if changed != 1:
-              raise RuntimeError(f'expected one RuntimeError inside an errors guard, patched={changed}, lines={runtime_lines!r}')
-          path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
-          PY
           python -m py_compile /tmp/build_ai_db.py /tmp/merge_supabase_current.py
 
       - name: Build direct-source database
