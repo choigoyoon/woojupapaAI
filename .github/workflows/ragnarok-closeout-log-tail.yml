@@ -15,8 +15,8 @@ jobs:
   inspect:
     runs-on: ubuntu-latest
     steps:
-      - name: Print failed log tail
+      - name: Print final failed lines
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh run view 34215088865 --repo "$GITHUB_REPOSITORY" --log-failed | tail -n 180
+          gh run view 34215088865 --repo "$GITHUB_REPOSITORY" --log-failed | tail -n 35
