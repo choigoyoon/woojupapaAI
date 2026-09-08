@@ -53,25 +53,27 @@ jobs:
 
           lines = source.splitlines()
           output = []
-          market_guard = 0
+          pagination_guard = 0
           fatal_guard = 0
           for line in lines:
-              output.append(line)
-              if line.strip() == 'out.extend(rows)' and market_guard == 0:
+              if 'raise RuntimeError' in line and 'pagination did not advance' in line:
                   indent = line[:len(line) - len(line.lstrip())]
                   output.extend([
                       indent + "if api == 'official-market':",
                       indent + "    print(f'official-market fixed snapshot: {len(out)} rows')",
                       indent + '    break',
+                      line,
                   ])
-                  market_guard += 1
+                  pagination_guard += 1
+                  continue
               if 'raise RuntimeError' in line and 'Supabase snapshot has' in line and 'fetch errors' in line:
-                  output.pop()
                   indent = line[:len(line) - len(line.lstrip())]
                   output.append(indent + 'print(f"WARNING: snapshot kept with {len(errors)} documented fetch errors")')
                   fatal_guard += 1
-          if market_guard != 1:
-              raise RuntimeError(f'expected one official-market guard, patched={market_guard}')
+                  continue
+              output.append(line)
+          if pagination_guard != 1:
+              raise RuntimeError(f'expected one pagination guard, patched={pagination_guard}')
           if fatal_guard != 1:
               raise RuntimeError(f'expected one final error guard, patched={fatal_guard}')
           source = '\n'.join(output) + '\n'
