@@ -1,0 +1,29 @@
+name: Juju Public Route Diagnostic
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/juju-public-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Resolve and probe public jump host
+        shell: bash
+        run: |
+          set +e
+          echo "checked_at_utc=$(date -u +%FT%TZ)"
+          echo '[DNS]'
+          getent ahostsv4 juju.guide365.kr || true
+          echo '[TCP 22]'
+          timeout 8 nc -vz juju.guide365.kr 22 2>&1 || true
+          echo '[HTTPS]'
+          curl -sSIL --max-time 10 https://juju.guide365.kr/ | sed -n '1,12p' || true
+          echo '[Tailscale target is private and tested only after jump-host login]'
