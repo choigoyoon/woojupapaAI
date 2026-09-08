@@ -1,0 +1,28 @@
+name: Probe Ragnarok Endpoints
+on:
+  push:
+    branches: [master]
+    paths: ['.github/workflows/probe-ragnarok-endpoints.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - shell: bash
+        run: |
+          set +e
+          BASE='https://lejxxzrjorfexgtvegjf.supabase.co/functions/v1'
+          for spec in \
+            'ragnarok-hub' \
+            'ragnarok-hub?action=status' \
+            'ragnarok-hub?api=status' \
+            'ragnarok-graph' \
+            'ragnarok-graph?api=status' \
+            'ragnarok-graph?api=search&q=%EC%B2%9C%EA%B3%B5&limit=2'; do
+            echo "===== $spec ====="
+            curl -sS --max-time 20 -w '\nHTTP=%{http_code}\n' "$BASE/$spec" | head -c 12000
+            echo
+          done
