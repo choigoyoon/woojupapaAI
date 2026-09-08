@@ -18,4 +18,4 @@ jobs:
       - name: Print merge builder section
         run: |
           base64 -d ragnarok-data-pipeline/merge_supabase_current.py.gz.b64 | gzip -d > /tmp/merge.py
-          nl -ba /tmp/merge.py | sed -n '200,390p'
+          nl -ba /tmp/merge.py | sed -n '390,620p'
