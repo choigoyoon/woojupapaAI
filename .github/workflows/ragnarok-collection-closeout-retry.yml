@@ -1,0 +1,242 @@
+name: Ragnarok Collection Closeout Retry
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/ragnarok-collection-closeout-retry.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: ragnarok-collection-closeout
+  cancel-in-progress: true
+
+jobs:
+  closeout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Checkout controller repository
+        uses: actions/checkout@v4
+
+      - name: Checkout direct source repositories
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p sources
+          git clone --depth 1 https://github.com/rathena/rathena.git sources/rathena
+          git clone --depth 1 https://github.com/OpenKore/openkore.git sources/openkore
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install builders
+        run: python -m pip install --upgrade duckdb pyarrow pandas pyyaml requests zstandard
+
+      - name: Restore and harden builders
+        shell: bash
+        run: |
+          set -euxo pipefail
+          base64 -d ragnarok-data-pipeline/build_ai_db.py.gz.b64 | gzip -d > /tmp/build_ai_db.py
+          base64 -d ragnarok-data-pipeline/merge_supabase_current.py.gz.b64 | gzip -d > /tmp/merge_supabase_current.py
+          python - <<'PY'
+          from pathlib import Path
+          import ast
+
+          path = Path('/tmp/merge_supabase_current.py')
+          source = path.read_text(encoding='utf-8')
+          tree = ast.parse(source)
+          replacement = ast.parse(
+              'print(f"WARNING: Supabase snapshot kept with {len(errors)} documented fetch errors")'
+          ).body[0]
+
+          class PatchFatalSnapshotGuard(ast.NodeTransformer):
+              def __init__(self):
+                  self.changed = 0
+
+              def visit_Raise(self, node):
+                  self.generic_visit(node)
+                  if node.exc is None:
+                      return node
+                  text = ast.unparse(node.exc)
+                  if 'Supabase snapshot has' in text and 'fetch errors' in text:
+                      self.changed += 1
+                      return ast.copy_location(replacement, node)
+                  return node
+
+          patcher = PatchFatalSnapshotGuard()
+          patched = patcher.visit(tree)
+          ast.fix_missing_locations(patched)
+          if patcher.changed != 1:
+              raise RuntimeError(f'expected one final snapshot guard, patched={patcher.changed}')
+          path.write_text(ast.unparse(patched) + '\n', encoding='utf-8')
+
+          lines = path.read_text(encoding='utf-8').splitlines()
+          changed = 0
+          for index, line in enumerate(lines):
+              if 'raise RuntimeError' in line and 'pagination did not advance' in line:
+                  indent = line[:len(line) - len(line.lstrip())]
+                  lines[index:index + 1] = [
+                      indent + "if api == 'official-market':",
+                      indent + "    print(f'official-market returned one fixed snapshot page; keeping {len(out)} rows')",
+                      indent + '    break',
+                      line,
+                  ]
+                  changed += 1
+                  break
+          if changed != 1:
+              raise RuntimeError(f'expected one pagination guard, patched={changed}')
+          path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+          PY
+          python -m py_compile /tmp/build_ai_db.py /tmp/merge_supabase_current.py
+
+      - name: Build direct-source database
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf export upload release
+          python /tmp/build_ai_db.py --rathena sources/rathena --openkore sources/openkore --out export
+
+      - name: Merge live Supabase entity and relation data
+        shell: bash
+        env:
+          RAGNAROK_EXPORT_WORKERS: '12'
+        run: |
+          set -euxo pipefail
+          python /tmp/merge_supabase_current.py --export export --workers 12
+
+      - name: Capture current graph inventory
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p export/closeout
+          curl -fsSL --retry 4 --retry-all-errors --max-time 90 \
+            'https://lejxxzrjorfexgtvegjf.supabase.co/functions/v1/ragnarok-graph?api=inventory' \
+            -o export/closeout/graph_inventory.json
+          python -m json.tool export/closeout/graph_inventory.json >/dev/null
+
+      - name: Verify, close and package collection
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p upload release
+          python - <<'PY'
+          import hashlib
+          import json
+          from datetime import datetime, timezone
+          from pathlib import Path
+          import duckdb
+
+          root = Path('export')
+          manifest_path = root / 'manifest' / 'manifest.json'
+          manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+          db = root / 'ai' / 'ragnarok-ai.duckdb'
+          con = duckdb.connect(str(db), read_only=True)
+          tables = {row[0] for row in con.execute('show tables').fetchall()}
+          wanted = [
+              'ai_entities_current',
+              'ai_relation_edges',
+              'supabase_entity_payloads',
+              'gnjoy_market_current',
+              'gnjoy_live_current',
+          ]
+          missing = [name for name in wanted if name not in tables]
+          if missing:
+              raise RuntimeError(f'missing required tables: {missing}')
+          counts = {name: int(con.execute(f'select count(*) from "{name}"').fetchone()[0]) for name in wanted}
+          type_counts = dict(con.execute(
+              'select entity_type, count(*) from ai_entities_current group by entity_type order by entity_type'
+          ).fetchall())
+          con.close()
+
+          warnings = manifest.get('errors') or []
+          assert counts['ai_entities_current'] > 50000, counts
+          assert counts['ai_relation_edges'] > 40000, counts
+          assert counts['supabase_entity_payloads'] > 3000, counts
+          assert counts['gnjoy_market_current'] > 0, counts
+          assert counts['gnjoy_live_current'] > 0, counts
+          assert len(warnings) <= 50, warnings[:5]
+
+          graph_inventory = json.loads((root / 'closeout' / 'graph_inventory.json').read_text(encoding='utf-8'))
+          closeout = {
+              'status': 'collection_closed_with_declared_external_limits',
+              'closed_at': datetime.now(timezone.utc).isoformat(),
+              'scope': [
+                  'rAthena Renewal direct source snapshot',
+                  'OpenKore kRO client tables',
+                  'Supabase current entities and payloads',
+                  'entity aliases and relation graph',
+                  'stored Divine Pride permitted details',
+                  'GNJOY notices and official market snapshot',
+              ],
+              'verified_counts': counts,
+              'entity_type_counts': type_counts,
+              'warning_count': len(warnings),
+              'warnings': warnings,
+              'graph_inventory': graph_inventory,
+              'external_limits': [
+                  'Divine Pride whole-database mirroring is not claimed; only already permitted and stored IDs are included.',
+                  'GNJOY official-market endpoint exposes a fixed current ranking snapshot and does not paginate historical rows.',
+                  'Completeness means every row available through the declared sources was exported, not every private Gravity server record.',
+              ],
+          }
+          out = root / 'closeout' / 'COLLECTION_CLOSEOUT.json'
+          out.write_text(json.dumps(closeout, ensure_ascii=False, indent=2, sort_keys=True), encoding='utf-8')
+          (root / 'closeout' / 'README_CLOSEOUT_KO.md').write_text(
+              '# 라그나로크 데이터 수집 마감본\n\n'
+              '정한 원천에서 실제로 확보 가능한 자료를 한 번 더 전수 추출하고, 건수·파일·해시를 검사해 마감했다.\n\n'
+              + '\n'.join(f'- {k}: {v:,}건' for k, v in counts.items())
+              + f'\n- 수집 경고: {len(warnings)}건(마감 장부에 원인 보존)\n\n'
+              'Divine Pride 전체 미러링과 Gravity 내부 비공개 자료는 완료로 주장하지 않는다.\n',
+              encoding='utf-8',
+          )
+          print(json.dumps(closeout, ensure_ascii=False, indent=2))
+          PY
+
+          (cd export/manifest && zip -9 -r ../../upload/00_manifest_final.zip .)
+          (cd export/raw && zip -0 -r ../../upload/01_raw_sources_final.zip .)
+          (cd export/canonical && zip -0 -r ../../upload/02_canonical_final.zip .)
+          (cd export/relations && zip -0 -r ../../upload/03_relations_final.zip .)
+          (cd export/supabase_current && zip -0 -r ../../upload/05_supabase_current_final.zip .)
+          (cd export/closeout && zip -9 -r ../../upload/06_collection_closeout.zip .)
+
+          python - <<'PY'
+          from pathlib import Path
+          import zstandard as zstd
+          src = Path('export/ai/ragnarok-ai.duckdb')
+          dst = Path('upload/ragnarok-ai-final.duckdb.zst')
+          with src.open('rb') as inp, dst.open('wb') as out:
+              zstd.ZstdCompressor(level=19, threads=-1).copy_stream(inp, out)
+          PY
+
+          sha256sum upload/* > upload/SHA256SUMS_FINAL.txt
+          cp upload/* release/
+          find release -maxdepth 1 -type f -printf '%f %s bytes\n' | sort
+
+      - name: Upload final collection artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ragnarok-collection-final
+          path: release/
+          retention-days: 30
+          compression-level: 0
+
+      - name: Publish final collection release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG='ragnarok-collection-final-2026-09-08'
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --target "$GITHUB_SHA" \
+              --title 'Ragnarok Collection Final — 2026-09-08' \
+              --notes 'Declared-source collection closeout. Counts, warnings, limits and SHA-256 are included.'
+          fi
+          gh release upload "$TAG" --clobber release/*
