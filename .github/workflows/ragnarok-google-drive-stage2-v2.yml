@@ -36,7 +36,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: pip
 
       - name: Install export builders
         run: python -m pip install --upgrade duckdb pyarrow pandas requests zstandard
@@ -59,7 +58,7 @@ jobs:
             stage2/bundle/05_supabase_exact_jsonl.zip
             stage2/bundle/06_supabase_direct_parquet.zip
             stage2/bundle/ragnarok-ai-full.duckdb.zst
-          retention-days: 7
+          retention-days: 30
 
       - name: Publish public transfer release
         env:
