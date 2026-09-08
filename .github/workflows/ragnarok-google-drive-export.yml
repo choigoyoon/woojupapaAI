@@ -7,6 +7,7 @@ on:
     paths:
       - '.github/workflows/ragnarok-google-drive-export.yml'
       - 'ragnarok-data-pipeline/build_ai_db.py.gz.b64'
+      - 'ragnarok-data-pipeline/merge_supabase_current.py.gz.b64'
 
 permissions:
   contents: read
@@ -18,7 +19,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       - name: Checkout controller repository
         uses: actions/checkout@v4
@@ -37,26 +38,76 @@ jobs:
           python-version: '3.11'
 
       - name: Install database builders
-        run: python -m pip install --upgrade duckdb pyarrow pandas pyyaml requests
+        run: python -m pip install --upgrade duckdb pyarrow pandas pyyaml requests zstandard
 
-      - name: Restore portable DB builder
+      - name: Restore database builders
         shell: bash
         run: |
+          set -euxo pipefail
           base64 -d ragnarok-data-pipeline/build_ai_db.py.gz.b64 | gzip -d > /tmp/build_ai_db.py
-          python -m py_compile /tmp/build_ai_db.py
+          base64 -d ragnarok-data-pipeline/merge_supabase_current.py.gz.b64 | gzip -d > /tmp/merge_supabase_current.py
+          python -m py_compile /tmp/build_ai_db.py /tmp/merge_supabase_current.py
 
-      - name: Build raw, canonical, relation and AI files
+      - name: Build direct-source database
         shell: bash
         run: |
           set -euxo pipefail
           rm -rf export upload
           python /tmp/build_ai_db.py --rathena sources/rathena --openkore sources/openkore --out export
+
+      - name: Merge Supabase Divine Pride, kRO and GNJOY current data
+        shell: bash
+        env:
+          RAGNAROK_EXPORT_WORKERS: '12'
+        run: |
+          set -euxo pipefail
+          python /tmp/merge_supabase_current.py --export export --workers 12
+
+      - name: Verify and package portable database
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import duckdb
+
+          root = Path('export')
+          manifest = json.loads((root/'manifest'/'manifest.json').read_text(encoding='utf-8'))
+          db = root/'ai'/'ragnarok-ai.duckdb'
+          con = duckdb.connect(str(db), read_only=True)
+          required = {
+              'ai_entities_current': int(con.execute('select count(*) from ai_entities_current').fetchone()[0]),
+              'ai_relation_edges': int(con.execute('select count(*) from ai_relation_edges').fetchone()[0]),
+              'supabase_entity_payloads': int(con.execute('select count(*) from supabase_entity_payloads').fetchone()[0]),
+              'gnjoy_market_current': int(con.execute('select count(*) from gnjoy_market_current').fetchone()[0]),
+              'gnjoy_live_current': int(con.execute('select count(*) from gnjoy_live_current').fetchone()[0]),
+          }
+          con.close()
+          assert required['ai_entities_current'] > 50000, required
+          assert required['ai_relation_edges'] > 40000, required
+          assert required['supabase_entity_payloads'] > 3000, required
+          assert manifest.get('errors') == [], manifest.get('errors')
+          print(json.dumps(required, ensure_ascii=False, indent=2))
+          PY
+
           mkdir -p upload
           (cd export/manifest && zip -9 -r ../../upload/00_manifest.zip .)
           (cd export/raw && zip -0 -r ../../upload/01_raw_sources.zip .)
           (cd export/canonical && zip -0 -r ../../upload/02_canonical_parquet.zip .)
           (cd export/relations && zip -0 -r ../../upload/03_relations_parquet.zip .)
-          (cd export/ai && zip -0 -r ../../upload/04_ai_duckdb.zip .)
+          (cd export/supabase_current && zip -0 -r ../../upload/05_supabase_current.zip .)
+
+          python - <<'PY'
+          from pathlib import Path
+          import zstandard as zstd
+          src = Path('export/ai/ragnarok-ai.duckdb')
+          dst = Path('upload/ragnarok-ai.duckdb.zst')
+          with src.open('rb') as inp, dst.open('wb') as out:
+              zstd.ZstdCompressor(level=19, threads=-1).copy_stream(inp, out)
+          print(f'{dst}: {dst.stat().st_size} bytes')
+          PY
+
           sha256sum upload/* > upload/SHA256SUMS.txt
           find upload -maxdepth 1 -type f -printf '%f %s bytes\n' | sort
 
@@ -91,11 +142,19 @@ jobs:
           retention-days: 7
           compression-level: 0
 
-      - name: Upload AI database bundle
+      - name: Upload AI database
         uses: actions/upload-artifact@v4
         with:
           name: ragnarok-04-ai-duckdb
-          path: upload/04_ai_duckdb.zip
+          path: upload/ragnarok-ai.duckdb.zst
+          retention-days: 7
+          compression-level: 0
+
+      - name: Upload Supabase current snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: ragnarok-05-supabase-current
+          path: upload/05_supabase_current.zip
           retention-days: 7
           compression-level: 0
 
