@@ -1,0 +1,84 @@
+name: Build and Publish Ragnarok AI DB Stage 2
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/ragnarok-google-drive-stage2-v2.yml'
+      - 'tools/ragnarok/build_stage2_portable.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: ragnarok-google-drive-stage2
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout controller repository
+        uses: actions/checkout@v4
+
+      - name: Download verified stage 1 DuckDB
+        uses: actions/download-artifact@v4
+        with:
+          name: ragnarok-04-ai-duckdb
+          path: stage1
+          github-token: ${{ github.token }}
+          run-id: 34194248237
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install export builders
+        run: python -m pip install --upgrade duckdb pyarrow pandas requests zstandard
+
+      - name: Export Supabase direct data and merge DuckDB
+        run: >-
+          python tools/ragnarok/build_stage2_portable.py
+          --endpoint https://lejxxzrjorfexgtvegjf.supabase.co/functions/v1/ragnarok-portable-export
+          --stage1-root stage1
+          --output stage2
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ragnarok-stage2-complete
+          path: |
+            stage2/bundle/stage2_manifest.json
+            stage2/bundle/README_STAGE2_KO.md
+            stage2/bundle/SHA256SUMS_STAGE2.txt
+            stage2/bundle/05_supabase_exact_jsonl.zip
+            stage2/bundle/06_supabase_direct_parquet.zip
+            stage2/bundle/ragnarok-ai-full.duckdb.zst
+          retention-days: 7
+
+      - name: Publish public transfer release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG=ragnarok-ai-stage2-latest
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" \
+              --target "$GITHUB_SHA" \
+              --title "Ragnarok AI DB Stage 2" \
+              --notes "Portable public game/reference database bundle for transfer to the owner's Google Drive." \
+              --prerelease
+          fi
+          gh release upload "$TAG" --clobber \
+            stage2/bundle/stage2_manifest.json \
+            stage2/bundle/README_STAGE2_KO.md \
+            stage2/bundle/SHA256SUMS_STAGE2.txt \
+            stage2/bundle/05_supabase_exact_jsonl.zip \
+            stage2/bundle/06_supabase_direct_parquet.zip \
+            stage2/bundle/ragnarok-ai-full.duckdb.zst
