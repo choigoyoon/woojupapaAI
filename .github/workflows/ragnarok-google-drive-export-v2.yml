@@ -46,21 +46,15 @@ jobs:
           base64 -d ragnarok-data-pipeline/merge_supabase_current.py.gz.b64 | gzip -d > /tmp/merge_supabase_current.py
           python - <<'PY'
           from pathlib import Path
-          import re
 
           path = Path('/tmp/merge_supabase_current.py')
           source = path.read_text(encoding='utf-8')
-          pattern = re.compile(
-              r'(?m)^(?P<indent>[ \t]*)if errors:[ \t]*\n(?P=indent)[ \t]+raise RuntimeError\(f"\{len\(errors\)\} graph fetch errors"\)[ \t]*$'
-          )
-          replacement = (
-              '\\g<indent>if errors:\n'
-              '\\g<indent>    print(f"WARNING: {len(errors)} graph fetch errors were recorded; continuing with successful rows")'
-          )
-          patched, count = pattern.subn(replacement, source)
+          old = 'raise RuntimeError(f"{len(errors)} graph fetch errors")'
+          new = 'print(f"WARNING: {len(errors)} graph fetch errors were recorded; continuing with successful rows")'
+          count = source.count(old)
           if count != 1:
-              raise RuntimeError(f'expected one graph error guard, patched={count}')
-          path.write_text(patched, encoding='utf-8')
+              raise RuntimeError(f'expected one graph error guard, found={count}')
+          path.write_text(source.replace(old, new), encoding='utf-8')
           PY
           python -m py_compile /tmp/build_ai_db.py /tmp/merge_supabase_current.py
 
