@@ -1,0 +1,22 @@
+name: Inspect Ragnarok Closeout Failure
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/ragnarok-closeout-log-tail.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print failed log tail
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run view 34211586763 --repo "$GITHUB_REPOSITORY" --log-failed | tail -n 240
