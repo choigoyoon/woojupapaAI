@@ -1,4 +1,4 @@
-name: Inspect Ragnarok Merge Builder
+name: Smoke Test Ragnarok Closeout SQL
 
 on:
   push:
@@ -9,13 +9,96 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   inspect:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - name: Print merge builder section
+      - name: Download stage 1 database
+        uses: actions/download-artifact@v4
+        with:
+          name: ragnarok-04-ai-duckdb
+          path: stage1
+          github-token: ${{ github.token }}
+          run-id: 34194248237
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --upgrade duckdb pandas pyarrow requests zstandard
+      - name: Patch and smoke-test view creation
+        shell: bash
         run: |
+          set -euxo pipefail
           base64 -d ragnarok-data-pipeline/merge_supabase_current.py.gz.b64 | gzip -d > /tmp/merge.py
-          nl -ba /tmp/merge.py | sed -n '390,620p'
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('/tmp/merge.py')
+          source = path.read_text(encoding='utf-8')
+          source, cast_aliases = re.subn(
+              r'(CAST\([^\n]*?\s+AS\s+VARCHAR\))\s+(?!AS\b)([A-Za-z_][A-Za-z0-9_]*)',
+              r'\1 AS \2',
+              source,
+          )
+          literal_aliases = 0
+          for old, new in [
+              ("'direct_source' detail_level", "'direct_source' AS detail_level"),
+              ("'via_portable_export' detail_level", "'via_portable_export' AS detail_level"),
+              ('END detail_level', 'END AS detail_level'),
+          ]:
+              count = source.count(old)
+              source = source.replace(old, new)
+              literal_aliases += count
+          if cast_aliases < 10:
+              raise RuntimeError(f'cast alias patch too small: {cast_aliases}')
+          if re.search(r'CAST\([^\n]*?\s+AS\s+VARCHAR\)\s+(?!AS\b)[A-Za-z_][A-Za-z0-9_]*', source):
+              raise RuntimeError('unpatched CAST alias remains')
+          path.write_text(source, encoding='utf-8')
+          print({'cast_aliases': cast_aliases, 'literal_aliases': literal_aliases})
+          PY
+          python -m py_compile /tmp/merge.py
+          python - <<'PY'
+          from pathlib import Path
+          import importlib.util
+          import duckdb
+          import zstandard as zstd
+
+          archive = next(Path('stage1').rglob('*.duckdb.zst'))
+          db = Path('/tmp/smoke.duckdb')
+          with archive.open('rb') as src, db.open('wb') as dst:
+              zstd.ZstdDecompressor().copy_stream(src, dst)
+
+          spec = importlib.util.spec_from_file_location('merge', '/tmp/merge.py')
+          mod = importlib.util.module_from_spec(spec)
+          assert spec.loader is not None
+          spec.loader.exec_module(mod)
+
+          con = duckdb.connect(str(db))
+          for table in ['supabase_entity_summaries','supabase_entity_payloads','supabase_graph_links','supabase_official_market','supabase_live_rows']:
+              con.execute(f'DROP TABLE IF EXISTS "{table}"')
+          con.execute('''CREATE TABLE supabase_entity_summaries(
+              entity_type VARCHAR, entity_id VARCHAR, name VARCHAR, description VARCHAR,
+              image_url VARCHAR, source_name VARCHAR, observed_at VARCHAR, summary_json VARCHAR)''')
+          con.execute("INSERT INTO supabase_entity_summaries VALUES ('item','1','테스트','설명',NULL,'test','2026-09-08','{}')")
+          con.execute('''CREATE TABLE supabase_entity_payloads(
+              entity_type VARCHAR, entity_id VARCHAR, source_name VARCHAR, source_file VARCHAR,
+              observed_at VARCHAR, payload_json VARCHAR)''')
+          con.execute("INSERT INTO supabase_entity_payloads VALUES ('item','1','test','test','2026-09-08','{}')")
+          con.execute('''CREATE TABLE supabase_graph_links(
+              from_type VARCHAR, from_id VARCHAR, relation_type VARCHAR, relation_group VARCHAR,
+              to_type VARCHAR, to_id VARCHAR, label VARCHAR, source_key VARCHAR, source_ref VARCHAR,
+              confidence VARCHAR, resolution_status VARCHAR, observed_at VARCHAR, evidence_json VARCHAR)''')
+          con.execute("INSERT INTO supabase_graph_links VALUES ('item','1','test',NULL,'item','2',NULL,'test',NULL,NULL,NULL,NULL,'{}')")
+          con.execute('CREATE TABLE supabase_official_market(item_id VARCHAR, item_name VARCHAR)')
+          con.execute("INSERT INTO supabase_official_market VALUES ('1','테스트')")
+          con.execute('CREATE TABLE supabase_live_rows(id VARCHAR, title VARCHAR)')
+          con.execute("INSERT INTO supabase_live_rows VALUES ('1','테스트')")
+          counts = mod.create_ai_views(con)
+          print(counts)
+          print(con.execute("SELECT entity_type, entity_id, name, detail_level FROM ai_entities_current WHERE entity_id='1' LIMIT 5").fetchall())
+          con.close()
+          PY
