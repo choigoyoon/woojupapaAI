@@ -1,4 +1,4 @@
-name: Inspect Closeout SQL Smoke Failure
+name: Inspect Latest Ragnarok Closeout Failure
 
 on:
   push:
@@ -15,8 +15,8 @@ jobs:
   inspect:
     runs-on: ubuntu-latest
     steps:
-      - name: Print final failed lines
+      - name: Print latest failed log tail
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh run view 34215088865 --repo "$GITHUB_REPOSITORY" --log-failed | tail -n 35
+          gh run view 34215231926 --repo "$GITHUB_REPOSITORY" --log-failed | tail -n 160
