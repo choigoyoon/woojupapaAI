@@ -1,0 +1,66 @@
+name: Ragnarok Closeout Monitor
+
+on:
+  workflow_run:
+    workflows: ['Ragnarok Collection Closeout Final']
+    types: [completed]
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Record final status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ragnarok-data-pipeline
+          {
+            echo "conclusion=$CONCLUSION"
+            echo "run_id=$RUN_ID"
+            echo "head_sha=$HEAD_SHA"
+            echo "completed_at_utc=$(date -u +%FT%TZ)"
+            echo "run_url=$RUN_URL"
+            echo
+            echo '[failed_log_tail]'
+            if [ "$CONCLUSION" != 'success' ]; then
+              gh run view "$RUN_ID" --repo "$GITHUB_REPOSITORY" --log-failed 2>&1 | tail -n 120 || true
+            else
+              echo 'none'
+            fi
+          } > ragnarok-data-pipeline/CLOSEOUT_STATUS.txt
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add ragnarok-data-pipeline/CLOSEOUT_STATUS.txt
+          git commit -m "Record Ragnarok closeout $CONCLUSION" || true
+          git push origin HEAD:master
+      - name: Remove temporary closeout workflows after success
+        if: ${{ github.event.workflow_run.conclusion == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git pull --rebase origin master
+          rm -f \
+            .github/workflows/ragnarok-final-probe.yml \
+            .github/workflows/ragnarok-final-probe2.yml \
+            .github/workflows/ragnarok-closeout-log-tail.yml \
+            .github/workflows/ragnarok-collection-closeout.yml \
+            .github/workflows/ragnarok-collection-closeout-retry.yml \
+            .github/workflows/ragnarok-collection-closeout-final.yml \
+            .github/workflows/ragnarok-closeout-monitor.yml
+          git add -A .github/workflows
+          git commit -m 'Close Ragnarok baseline collection workflows' || true
+          git push origin HEAD:master
