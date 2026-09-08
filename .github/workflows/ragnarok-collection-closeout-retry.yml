@@ -47,52 +47,64 @@ jobs:
           base64 -d ragnarok-data-pipeline/merge_supabase_current.py.gz.b64 | gzip -d > /tmp/merge_supabase_current.py
           python - <<'PY'
           from pathlib import Path
-          import ast
+          import re
 
           path = Path('/tmp/merge_supabase_current.py')
-          source = path.read_text(encoding='utf-8')
-          tree = ast.parse(source)
-          replacement = ast.parse(
-              'print(f"WARNING: Supabase snapshot kept with {len(errors)} documented fetch errors")'
-          ).body[0]
-
-          class PatchFatalSnapshotGuard(ast.NodeTransformer):
-              def __init__(self):
-                  self.changed = 0
-
-              def visit_Raise(self, node):
-                  self.generic_visit(node)
-                  if node.exc is None:
-                      return node
-                  text = ast.unparse(node.exc)
-                  if 'Supabase snapshot has' in text and 'fetch errors' in text:
-                      self.changed += 1
-                      return ast.copy_location(replacement, node)
-                  return node
-
-          patcher = PatchFatalSnapshotGuard()
-          patched = patcher.visit(tree)
-          ast.fix_missing_locations(patched)
-          if patcher.changed != 1:
-              raise RuntimeError(f'expected one final snapshot guard, patched={patcher.changed}')
-          path.write_text(ast.unparse(patched) + '\n', encoding='utf-8')
-
           lines = path.read_text(encoding='utf-8').splitlines()
-          changed = 0
-          for index, line in enumerate(lines):
+          output = []
+          fatal_changed = 0
+          pagination_changed = 0
+          for line in lines:
+              if 'raise RuntimeError' in line and 'Supabase snapshot has' in line and 'fetch errors' in line:
+                  indent = line[:len(line) - len(line.lstrip())]
+                  output.append(indent + 'print(f"WARNING: Supabase snapshot kept with {len(errors)} documented fetch errors")')
+                  fatal_changed += 1
+                  continue
               if 'raise RuntimeError' in line and 'pagination did not advance' in line:
                   indent = line[:len(line) - len(line.lstrip())]
-                  lines[index:index + 1] = [
+                  output.extend([
                       indent + "if api == 'official-market':",
                       indent + "    print(f'official-market returned one fixed snapshot page; keeping {len(out)} rows')",
                       indent + '    break',
                       line,
-                  ]
-                  changed += 1
-                  break
-          if changed != 1:
-              raise RuntimeError(f'expected one pagination guard, patched={changed}')
-          path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+                  ])
+                  pagination_changed += 1
+                  continue
+              output.append(line)
+
+          if fatal_changed != 1:
+              raise RuntimeError(f'expected one final snapshot guard, patched={fatal_changed}')
+          if pagination_changed != 1:
+              raise RuntimeError(f'expected one pagination guard, patched={pagination_changed}')
+
+          source = '\n'.join(output) + '\n'
+          source, cast_aliases = re.subn(
+              r'(CAST\([^\n]*?\s+AS\s+VARCHAR\))\s+(?!AS\b)([A-Za-z_][A-Za-z0-9_]*)',
+              r'\1 AS \2',
+              source,
+          )
+          literal_aliases = 0
+          for old, new in [
+              ("'direct_source' detail_level", "'direct_source' AS detail_level"),
+              ("'via_portable_export' detail_level", "'via_portable_export' AS detail_level"),
+              ('END detail_level', 'END AS detail_level'),
+          ]:
+              count = source.count(old)
+              source = source.replace(old, new)
+              literal_aliases += count
+
+          if cast_aliases < 10:
+              raise RuntimeError(f'cast alias patch too small: {cast_aliases}')
+          if re.search(r'CAST\([^\n]*?\s+AS\s+VARCHAR\)\s+(?!AS\b)[A-Za-z_][A-Za-z0-9_]*', source):
+              raise RuntimeError('unpatched CAST alias remains')
+
+          path.write_text(source, encoding='utf-8')
+          print({
+              'fatal_guard': fatal_changed,
+              'pagination_guard': pagination_changed,
+              'cast_aliases': cast_aliases,
+              'literal_aliases': literal_aliases,
+          })
           PY
           python -m py_compile /tmp/build_ai_db.py /tmp/merge_supabase_current.py
 
@@ -127,7 +139,6 @@ jobs:
           set -euxo pipefail
           mkdir -p upload release
           python - <<'PY'
-          import hashlib
           import json
           from datetime import datetime, timezone
           from pathlib import Path
@@ -153,6 +164,9 @@ jobs:
           type_counts = dict(con.execute(
               'select entity_type, count(*) from ai_entities_current group by entity_type order by entity_type'
           ).fetchall())
+          source_counts = dict(con.execute(
+              "select coalesce(source_name,'unknown'), count(*) from ai_entities_current group by 1 order by 1"
+          ).fetchall())
           con.close()
 
           warnings = manifest.get('errors') or []
@@ -177,6 +191,7 @@ jobs:
               ],
               'verified_counts': counts,
               'entity_type_counts': type_counts,
+              'source_counts': source_counts,
               'warning_count': len(warnings),
               'warnings': warnings,
               'graph_inventory': graph_inventory,
