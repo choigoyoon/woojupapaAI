@@ -51,23 +51,32 @@ jobs:
           path = Path('/tmp/merge_supabase_current.py')
           source = path.read_text(encoding='utf-8')
           tree = ast.parse(source)
-          targets = []
-          for node in ast.walk(tree):
-              if not isinstance(node, ast.Raise) or node.exc is None:
-                  continue
-              text = ast.unparse(node.exc)
-              if 500 <= getattr(node, 'lineno', 0) < 540 and 'RuntimeError' in text:
-                  targets.append(node)
-          if len(targets) != 1:
+          replacement = ast.parse('print(f"WARNING: {len(errors)} graph fetch errors recorded; continuing with successful rows")').body[0]
+
+          class PatchGraphGuard(ast.NodeTransformer):
+              def __init__(self):
+                  self.changed = 0
+                  self.matches = []
+
+              def visit_Raise(self, node):
+                  self.generic_visit(node)
+                  if node.exc is None:
+                      return node
+                  text = ast.unparse(node.exc)
+                  if 'RuntimeError' in text and 'graph fetch errors' in text:
+                      self.changed += 1
+                      self.matches.append((getattr(node, 'lineno', None), text))
+                      return ast.copy_location(replacement, node)
+                  return node
+
+          patcher = PatchGraphGuard()
+          patched = patcher.visit(tree)
+          ast.fix_missing_locations(patched)
+          print({'patched': patcher.changed, 'matches': patcher.matches})
+          if patcher.changed != 1:
               raises = [(getattr(n,'lineno',None), ast.unparse(n.exc)) for n in ast.walk(tree) if isinstance(n, ast.Raise) and n.exc is not None]
-              raise RuntimeError(f'expected one graph guard raise in lines 500-539, found={targets!r}, all={raises!r}')
-          target_line = targets[0].lineno
-          lines = source.splitlines()
-          index = target_line - 1
-          indent = lines[index][:len(lines[index]) - len(lines[index].lstrip())]
-          lines[index] = indent + 'print(f"WARNING: {len(errors)} graph fetch errors recorded; continuing with successful rows")'
-          path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
-          print({'patched_line': target_line})
+              raise RuntimeError(f'expected one graph fetch RuntimeError, patched={patcher.changed}, raises={raises!r}')
+          path.write_text(ast.unparse(patched) + '\n', encoding='utf-8')
           PY
           python -m py_compile /tmp/build_ai_db.py /tmp/merge_supabase_current.py
 
