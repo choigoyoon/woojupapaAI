@@ -48,13 +48,17 @@ jobs:
           from pathlib import Path
 
           path = Path('/tmp/merge_supabase_current.py')
-          source = path.read_text(encoding='utf-8')
-          old = 'raise RuntimeError(f"{len(errors)} graph fetch errors")'
-          new = 'print(f"WARNING: {len(errors)} graph fetch errors were recorded; continuing with successful rows")'
-          count = source.count(old)
-          if count != 1:
-              raise RuntimeError(f'expected one graph error guard, found={count}')
-          path.write_text(source.replace(old, new), encoding='utf-8')
+          lines = path.read_text(encoding='utf-8').splitlines()
+          changed = 0
+          for index, line in enumerate(lines):
+              if 'raise RuntimeError' in line and 'graph fetch errors' in line:
+                  indent = line[:len(line) - len(line.lstrip())]
+                  lines[index] = indent + 'print(f"WARNING: {len(errors)} graph fetch errors were recorded; continuing with successful rows")'
+                  changed += 1
+          if changed != 1:
+              nearby = [line for line in lines if 'graph fetch' in line]
+              raise RuntimeError(f'expected one graph error guard, changed={changed}, nearby={nearby!r}')
+          path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
           PY
           python -m py_compile /tmp/build_ai_db.py /tmp/merge_supabase_current.py
 
