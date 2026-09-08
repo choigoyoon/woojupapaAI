@@ -51,7 +51,6 @@ jobs:
           path = Path('/tmp/merge_supabase_current.py')
           source = path.read_text(encoding='utf-8')
 
-          # GNJOY official-market is one fixed current ranking page, not an offset feed.
           lines = source.splitlines()
           output = []
           market_guard = 0
@@ -77,64 +76,107 @@ jobs:
               raise RuntimeError(f'expected one final error guard, patched={fatal_guard}')
           source = '\n'.join(output) + '\n'
 
-          # Replace the fragile presentation-view builder. The fetched source tables
-          # remain exact; these stable views expose them without lossy coercion.
           start = source.index('def create_ai_views(')
-          end = source.index('\ndef main(', start)
-          replacement = r'''def create_ai_views(con):
-    def objects():
-        return {row[0] for row in con.execute("SHOW TABLES").fetchall()}
-
-    def drop_object(name):
-        row = con.execute(
-            "SELECT table_type FROM information_schema.tables WHERE table_name = ? LIMIT 1",
-            [name],
-        ).fetchone()
-        if not row:
-            return
-        if "VIEW" in str(row[0]).upper():
-            con.execute(f'DROP VIEW "{name}"')
-        else:
-            con.execute(f'DROP TABLE "{name}"')
-
-    existing = objects()
-    if "ai_entities_current" not in existing:
-        raise RuntimeError("stage-1 ai_entities_current is missing")
-    if "ai_relation_edges" not in existing:
-        raise RuntimeError("stage-1 ai_relation_edges is missing")
-
-    for name in [
-        "ai_supabase_entities_current",
-        "ai_supabase_payloads_current",
-        "ai_supabase_relation_edges",
-        "ai_supabase_search",
-        "gnjoy_market_current",
-        "gnjoy_live_current",
-    ]:
-        drop_object(name)
-
-    con.execute("CREATE VIEW ai_supabase_entities_current AS SELECT * FROM supabase_entity_summaries")
-    con.execute("CREATE VIEW ai_supabase_payloads_current AS SELECT * FROM supabase_entity_payloads")
-    con.execute("CREATE VIEW ai_supabase_relation_edges AS SELECT * FROM supabase_graph_links")
-    con.execute("""
-        CREATE VIEW ai_supabase_search AS
-        SELECT entity_type, entity_id, name, description, source_name, observed_at,
-               lower(concat_ws(' ', entity_type, entity_id, name, description, source_name)) AS search_text,
-               summary_json
-        FROM supabase_entity_summaries
-    """)
-    con.execute("CREATE TABLE gnjoy_market_current AS SELECT * FROM supabase_official_market")
-    con.execute("CREATE TABLE gnjoy_live_current AS SELECT * FROM supabase_live_rows")
-    con.execute("CHECKPOINT")
-
-    return {
-        "ai_entities_current": int(con.execute("SELECT count(*) FROM ai_entities_current").fetchone()[0]),
-        "ai_relation_edges": int(con.execute("SELECT count(*) FROM ai_relation_edges").fetchone()[0]),
-        "supabase_entity_payloads": int(con.execute("SELECT count(*) FROM supabase_entity_payloads").fetchone()[0]),
-        "gnjoy_market_current": int(con.execute("SELECT count(*) FROM gnjoy_market_current").fetchone()[0]),
-        "gnjoy_live_current": int(con.execute("SELECT count(*) FROM gnjoy_live_current").fetchone()[0]),
-    }
-'''
+          end = source.index('\ndef append_readme(', start)
+          replacement = "\n".join([
+              "def create_ai_views(con):",
+              "    con.execute('''",
+              "        CREATE OR REPLACE VIEW ai_entities_current AS",
+              "        WITH sup AS (",
+              "          SELECT CAST(s.entity_type AS VARCHAR) AS entity_type,",
+              "                 CAST(s.entity_id AS VARCHAR) AS entity_id,",
+              "                 CAST(s.name AS VARCHAR) AS name,",
+              "                 CAST(s.description AS VARCHAR) AS description,",
+              "                 CAST(s.image_url AS VARCHAR) AS image_url,",
+              "                 CAST(s.source_name AS VARCHAR) AS source_name,",
+              "                 CAST(s.observed_at AS VARCHAR) AS observed_at,",
+              "                 CAST(COALESCE(p.payload_json, s.summary_json) AS VARCHAR) AS payload_json,",
+              "                 CASE WHEN p.entity_id IS NULL THEN 'summary' ELSE 'full' END AS detail_level",
+              "          FROM supabase_entity_summaries s",
+              "          LEFT JOIN supabase_entity_payloads p USING(entity_type, entity_id)",
+              "        ), base AS (",
+              "          SELECT CAST(e.entity_type AS VARCHAR) AS entity_type,",
+              "                 CAST(e.entity_id AS VARCHAR) AS entity_id,",
+              "                 CAST(e.name AS VARCHAR) AS name,",
+              "                 CAST(NULL AS VARCHAR) AS description,",
+              "                 CAST(NULL AS VARCHAR) AS image_url,",
+              "                 CAST(e.source_key AS VARCHAR) AS source_name,",
+              "                 CAST(NULL AS VARCHAR) AS observed_at,",
+              "                 CAST(e.payload_json AS VARCHAR) AS payload_json,",
+              "                 'direct_source' AS detail_level",
+              "          FROM entities e",
+              "        )",
+              "        SELECT * FROM sup",
+              "        UNION ALL",
+              "        SELECT b.* FROM base b",
+              "        WHERE NOT EXISTS (",
+              "          SELECT 1 FROM sup s",
+              "          WHERE s.entity_type=b.entity_type AND s.entity_id=b.entity_id",
+              "        )",
+              "    ''')",
+              "    con.execute('''",
+              "        CREATE OR REPLACE VIEW ai_entity_search AS",
+              "        SELECT entity_type, entity_id, name, description, image_url, source_name,",
+              "               observed_at, detail_level, payload_json,",
+              "               lower(concat_ws(' ', entity_type, entity_id, name, description, source_name, payload_json)) AS search_text",
+              "        FROM ai_entities_current",
+              "    ''')",
+              "    con.execute('''",
+              "        CREATE OR REPLACE VIEW ai_relation_edges AS",
+              "        SELECT CAST(g.from_type AS VARCHAR) AS from_type,",
+              "               CAST(g.from_id AS VARCHAR) AS from_id,",
+              "               CAST(g.relation_type AS VARCHAR) AS relation_type,",
+              "               CAST(g.relation_group AS VARCHAR) AS relation_group,",
+              "               CAST(g.to_type AS VARCHAR) AS to_type,",
+              "               CAST(g.to_id AS VARCHAR) AS to_id,",
+              "               CAST(g.label AS VARCHAR) AS label,",
+              "               CAST(g.source_key AS VARCHAR) AS source_name,",
+              "               CAST(g.source_ref AS VARCHAR) AS source_ref,",
+              "               CAST(g.confidence AS VARCHAR) AS confidence,",
+              "               CAST(g.resolution_status AS VARCHAR) AS resolution_status,",
+              "               CAST(g.observed_at AS VARCHAR) AS observed_at,",
+              "               CAST(g.evidence_json AS VARCHAR) AS evidence_json,",
+              "               'supabase_graph' AS detail_level",
+              "        FROM supabase_graph_links g",
+              "        UNION ALL",
+              "        SELECT CAST(r.from_type AS VARCHAR) AS from_type,",
+              "               CAST(r.from_id AS VARCHAR) AS from_id,",
+              "               CAST(r.relation_type AS VARCHAR) AS relation_type,",
+              "               CAST(NULL AS VARCHAR) AS relation_group,",
+              "               CAST(r.to_type AS VARCHAR) AS to_type,",
+              "               CAST(r.to_ref AS VARCHAR) AS to_id,",
+              "               CAST(NULL AS VARCHAR) AS label,",
+              "               CAST(r.source_key AS VARCHAR) AS source_name,",
+              "               CAST(r.source_file AS VARCHAR) AS source_ref,",
+              "               CAST(NULL AS VARCHAR) AS confidence,",
+              "               CASE WHEN r.to_ref IS NULL OR r.to_ref='' THEN 'unresolved' ELSE 'raw_reference' END AS resolution_status,",
+              "               CAST(NULL AS VARCHAR) AS observed_at,",
+              "               CAST(r.payload_json AS VARCHAR) AS evidence_json,",
+              "               'direct_source' AS detail_level",
+              "        FROM relations r",
+              "    ''')",
+              "    con.execute('CREATE OR REPLACE VIEW ai_market_current AS SELECT * FROM gnjoy_market_current')",
+              "    con.execute('CREATE OR REPLACE VIEW ai_live_updates AS SELECT * FROM gnjoy_live_current')",
+              "    con.execute('DROP TABLE IF EXISTS ai_readme')",
+              "    con.execute('CREATE TABLE ai_readme(section VARCHAR, content VARCHAR)')",
+              "    con.executemany('INSERT INTO ai_readme VALUES (?, ?)', [",
+              "        ('purpose', '라그나로크 원천·현재값·관계를 한 파일에서 AI가 검색하고 조합하기 위한 DB'),",
+              "        ('entities', 'ai_entity_search 또는 ai_entities_current 사용'),",
+              "        ('relations', 'ai_relation_edges 사용'),",
+              "        ('policy', '출처 충돌은 덮어쓰지 않고 source_name과 payload_json을 보존'),",
+              "    ])",
+              "    con.execute('CHECKPOINT')",
+              "    return {",
+              "        'ai_entities_current': int(con.execute('SELECT count(*) FROM ai_entities_current').fetchone()[0]),",
+              "        'ai_relation_edges': int(con.execute('SELECT count(*) FROM ai_relation_edges').fetchone()[0]),",
+              "        'supabase_entity_summaries': int(con.execute('SELECT count(*) FROM supabase_entity_summaries').fetchone()[0]),",
+              "        'supabase_entity_payloads': int(con.execute('SELECT count(*) FROM supabase_entity_payloads').fetchone()[0]),",
+              "        'supabase_graph_links': int(con.execute('SELECT count(*) FROM supabase_graph_links').fetchone()[0]),",
+              "        'gnjoy_market_current': int(con.execute('SELECT count(*) FROM gnjoy_market_current').fetchone()[0]),",
+              "        'gnjoy_live_current': int(con.execute('SELECT count(*) FROM gnjoy_live_current').fetchone()[0]),",
+              "    }",
+              "",
+          ])
           source = source[:start] + replacement + source[end:]
           path.write_text(source, encoding='utf-8')
           PY
@@ -160,9 +202,12 @@ jobs:
         run: |
           set -euxo pipefail
           mkdir -p export/closeout
-          curl -fsSL --retry 4 --retry-all-errors --max-time 90 \
+          if ! curl -fsSL --retry 4 --retry-all-errors --max-time 90 \
             'https://lejxxzrjorfexgtvegjf.supabase.co/functions/v1/ragnarok-graph?api=inventory' \
-            -o export/closeout/graph_inventory.json
+            -o export/closeout/graph_inventory.json; then
+            printf '%s\n' '{"status":"unavailable","reason":"inventory endpoint fetch failed after retries"}' \
+              > export/closeout/graph_inventory.json
+          fi
           python -m json.tool export/closeout/graph_inventory.json >/dev/null
 
       - name: Verify, freeze and package collection
@@ -180,49 +225,77 @@ jobs:
           manifest = json.loads((root / 'manifest' / 'manifest.json').read_text(encoding='utf-8'))
           db = root / 'ai' / 'ragnarok-ai.duckdb'
           con = duckdb.connect(str(db), read_only=True)
-          tables = {row[0] for row in con.execute('SHOW TABLES').fetchall()}
+          objects = {row[0] for row in con.execute('SHOW TABLES').fetchall()}
           wanted = [
               'ai_entities_current',
+              'ai_entity_search',
               'ai_relation_edges',
+              'supabase_entity_summaries',
               'supabase_entity_payloads',
               'supabase_graph_links',
               'gnjoy_market_current',
               'gnjoy_live_current',
           ]
-          missing = [name for name in wanted if name not in tables]
+          missing = [name for name in wanted if name not in objects]
           if missing:
-              raise RuntimeError(f'missing required tables: {missing}')
-          counts = {name: int(con.execute(f'SELECT count(*) FROM "{name}"').fetchone()[0]) for name in wanted}
-          columns = {row[0] for row in con.execute('DESCRIBE ai_entities_current').fetchall()}
-          type_counts = {}
-          if 'entity_type' in columns:
-              type_counts = dict(con.execute(
-                  'SELECT entity_type, count(*) FROM ai_entities_current GROUP BY entity_type ORDER BY entity_type'
-              ).fetchall())
+              raise RuntimeError(f'missing required objects: {missing}')
+          count_names = [
+              'ai_entities_current',
+              'ai_relation_edges',
+              'supabase_entity_summaries',
+              'supabase_entity_payloads',
+              'supabase_graph_links',
+              'gnjoy_market_current',
+              'gnjoy_live_current',
+              'entities',
+              'relations',
+              'aliases',
+              'openkore_rows',
+          ]
+          counts = {name: int(con.execute(f'SELECT count(*) FROM "{name}"').fetchone()[0]) for name in count_names}
+          type_counts = dict(con.execute(
+              'SELECT entity_type, count(*) FROM ai_entities_current GROUP BY entity_type ORDER BY entity_type'
+          ).fetchall())
+          sample_checks = {
+              'searchable_rows': int(con.execute("SELECT count(*) FROM ai_entity_search WHERE search_text IS NOT NULL").fetchone()[0]),
+              'direct_relation_rows': int(con.execute("SELECT count(*) FROM ai_relation_edges WHERE detail_level='direct_source'").fetchone()[0]),
+              'supabase_relation_rows': int(con.execute("SELECT count(*) FROM ai_relation_edges WHERE detail_level='supabase_graph'").fetchone()[0]),
+          }
           con.close()
 
           warnings = manifest.get('errors') or []
-          assert counts['ai_entities_current'] > 50000, counts
-          assert counts['ai_relation_edges'] > 40000, counts
+          assert counts['entities'] == 50785, counts
+          assert counts['relations'] == 40913, counts
+          assert counts['aliases'] == 151453, counts
+          assert counts['openkore_rows'] == 287880, counts
+          assert counts['ai_entities_current'] >= counts['entities'], counts
+          assert counts['ai_relation_edges'] > counts['relations'], counts
+          assert counts['supabase_entity_summaries'] > 30000, counts
           assert counts['supabase_entity_payloads'] > 3000, counts
           assert counts['supabase_graph_links'] > 1000, counts
           assert counts['gnjoy_market_current'] > 0, counts
           assert counts['gnjoy_live_current'] > 0, counts
+          assert sample_checks['searchable_rows'] > 50000, sample_checks
+          assert sample_checks['direct_relation_rows'] == counts['relations'], sample_checks
+          assert sample_checks['supabase_relation_rows'] == counts['supabase_graph_links'], sample_checks
           assert len(warnings) <= 50, warnings[:5]
 
           closeout = {
               'status': 'collection_closed_with_declared_external_limits',
-              'closed_at': datetime.now(timezone.utc).isoformat(),
+              'closed_at_utc': datetime.now(timezone.utc).isoformat(),
+              'schema_version': manifest.get('schema_version'),
+              'source_commits': manifest.get('source_commits'),
               'scope': [
                   'rAthena Renewal direct source snapshot',
                   'OpenKore kRO client tables',
-                  'Supabase current entities and detailed payloads',
-                  'stored entity aliases and relation graph',
+                  'Supabase current entity summaries and detailed payloads',
+                  'direct and Supabase relation graphs',
                   'stored Divine Pride permitted details',
-                  'GNJOY notices and official market snapshot',
+                  'GNJOY notices and current official market snapshot',
               ],
               'verified_counts': counts,
               'entity_type_counts': type_counts,
+              'sample_checks': sample_checks,
               'warning_count': len(warnings),
               'warnings': warnings,
               'graph_inventory': json.loads((root / 'closeout' / 'graph_inventory.json').read_text(encoding='utf-8')),
@@ -230,7 +303,9 @@ jobs:
                   'Divine Pride whole-database mirroring is not claimed; only permitted and already stored IDs are included.',
                   'GNJOY official-market exposes a fixed current ranking snapshot rather than a historical paginated feed.',
                   'Gravity private server records are not public source data and are not claimed as collected.',
+                  'Transient graph fetch failures are retained as warnings instead of being guessed or silently deleted.',
               ],
+              'future_policy': 'bulk collection is closed; append only official and client update deltas after this snapshot',
           }
           (root / 'closeout' / 'COLLECTION_CLOSEOUT.json').write_text(
               json.dumps(closeout, ensure_ascii=False, indent=2, sort_keys=True), encoding='utf-8'
@@ -256,10 +331,12 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           import zstandard as zstd
+
           src = Path('export/ai/ragnarok-ai.duckdb')
           dst = Path('upload/ragnarok-ai-final.duckdb.zst')
           with src.open('rb') as inp, dst.open('wb') as out:
               zstd.ZstdCompressor(level=19, threads=-1).copy_stream(inp, out)
+          print(f'{dst}: {dst.stat().st_size} bytes')
           PY
 
           sha256sum upload/* > upload/SHA256SUMS_FINAL.txt
