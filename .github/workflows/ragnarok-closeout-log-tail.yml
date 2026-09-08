@@ -1,4 +1,4 @@
-name: Inspect Ragnarok Closeout Failure
+name: Inspect Ragnarok Merge Builder
 
 on:
   push:
@@ -8,15 +8,14 @@ on:
   workflow_dispatch:
 
 permissions:
-  actions: read
   contents: read
 
 jobs:
   inspect:
     runs-on: ubuntu-latest
     steps:
-      - name: Print failed log tail
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - uses: actions/checkout@v4
+      - name: Print merge builder section
         run: |
-          gh run view 34211586763 --repo "$GITHUB_REPOSITORY" --log-failed | tail -n 240
+          base64 -d ragnarok-data-pipeline/merge_supabase_current.py.gz.b64 | gzip -d > /tmp/merge.py
+          nl -ba /tmp/merge.py | sed -n '200,390p'
