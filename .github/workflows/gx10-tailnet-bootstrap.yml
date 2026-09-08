@@ -1,0 +1,124 @@
+name: GX10 Tailnet Bootstrap
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/gx10-tailnet-bootstrap.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  connect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TS_OAUTH_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+      TS_OAUTH_SECRET: ${{ secrets.TS_OAUTH_SECRET }}
+      TS_AUDIENCE: ${{ secrets.TS_AUDIENCE }}
+      TS_AUTHKEY: ${{ secrets.TS_AUTHKEY }}
+      TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
+      TAILSCALE_OAUTH_CLIENT_ID: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+      TAILSCALE_OAUTH_SECRET: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
+    steps:
+      - name: Detect configured credential route
+        id: detect
+        shell: bash
+        run: |
+          set -eu
+          mode=none
+          if [ -n "${TS_OAUTH_CLIENT_ID:-}" ] && [ -n "${TS_OAUTH_SECRET:-}" ]; then mode=oauth_default
+          elif [ -n "${TAILSCALE_OAUTH_CLIENT_ID:-}" ] && [ -n "${TAILSCALE_OAUTH_SECRET:-}" ]; then mode=oauth_alt
+          elif [ -n "${TS_AUTHKEY:-}" ]; then mode=authkey_default
+          elif [ -n "${TAILSCALE_AUTHKEY:-}" ]; then mode=authkey_alt
+          elif [ -n "${TS_OAUTH_CLIENT_ID:-}" ] && [ -n "${TS_AUDIENCE:-}" ]; then mode=oidc
+          fi
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+          echo "credential_mode=$mode"
+
+      - name: Connect with default OAuth secret names
+        if: steps.detect.outputs.mode == 'oauth_default'
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          hostname: wooju-gx10-bootstrap
+          ping: 100.93.223.45
+          log-mode: quiet
+
+      - name: Connect with alternate OAuth secret names
+        if: steps.detect.outputs.mode == 'oauth_alt'
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
+          tags: tag:ci
+          hostname: wooju-gx10-bootstrap
+          ping: 100.93.223.45
+          log-mode: quiet
+
+      - name: Connect with TS_AUTHKEY
+        if: steps.detect.outputs.mode == 'authkey_default'
+        uses: tailscale/github-action@v4
+        with:
+          authkey: ${{ secrets.TS_AUTHKEY }}
+          hostname: wooju-gx10-bootstrap
+          ping: 100.93.223.45
+          log-mode: quiet
+
+      - name: Connect with TAILSCALE_AUTHKEY
+        if: steps.detect.outputs.mode == 'authkey_alt'
+        uses: tailscale/github-action@v4
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+          hostname: wooju-gx10-bootstrap
+          ping: 100.93.223.45
+          log-mode: quiet
+
+      - name: Connect with workload identity
+        if: steps.detect.outputs.mode == 'oidc'
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          audience: ${{ secrets.TS_AUDIENCE }}
+          tags: tag:ci
+          hostname: wooju-gx10-bootstrap
+          ping: 100.93.223.45
+          log-mode: quiet
+
+      - name: Stop when no Tailscale credential is configured
+        if: steps.detect.outputs.mode == 'none'
+        run: |
+          echo 'No supported Tailscale GitHub credential secret is configured.'
+          exit 2
+
+      - name: Reach GX10 and create workspace through Tailscale SSH
+        shell: bash
+        run: |
+          set -u
+          OUT="$RUNNER_TEMP/gx10-tailnet.txt"
+          {
+            echo "checked_at_utc=$(date -u +%FT%TZ)"
+            echo "credential_mode=${{ steps.detect.outputs.mode }}"
+            echo '[tailscale status]'
+            tailscale status || true
+            echo '[tailscale ping]'
+            tailscale ping -c 3 100.93.223.45 || true
+            echo '[tailscale ssh]'
+            timeout 35 tailscale ssh choi@100.93.223.45 \
+              'set -u; echo hostname=$(hostname); echo user=$(id -un); echo kernel=$(uname -a); TARGET=$HOME/ragnarok-ai; mkdir -p "$TARGET"/{raw,current,index,sync,logs}; echo workspace=$TARGET; find "$TARGET" -maxdepth 1 -type d -print | sort' \
+              2>&1
+          } | tee "$OUT"
+
+      - name: Upload diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gx10-tailnet-diagnostic
+          path: ${{ runner.temp }}/gx10-tailnet.txt
+          if-no-files-found: ignore
+          retention-days: 3
